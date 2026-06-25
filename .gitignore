@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Сессия браузера Playwright (логин/cookies) — личное, не коммитим
+.browser_profile/
+
+# Локальная история откликов
+history.db
+
+# ОС
+.DS_Store
