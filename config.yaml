@@ -1,17 +1,14 @@
 professions:
-- text: Маркетолог b2b
-- text: Маркетолог аналитик
+- text: python разработчик
 region: 1
-salary_min: 200000
+salary_min: 150000
 exclude_words: []
 include_words: []
 resume_name: ''
-cover_letter: 'Здравствуйте! Меня заинтересовала ваша вакансия.
-
-  Буду рад обсудить детали. Резюме приложено.'
-daily_limit: 150
+cover_letter: ''
+daily_limit: 100
 delay_seconds:
 - 20
 - 45
-max_pages: 5
+max_pages: 3
 strict_title_match: true

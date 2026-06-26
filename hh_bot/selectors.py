@@ -35,3 +35,19 @@ RESUME_SELECT = '[data-qa="resume-select"]'
 RESPONSE_QUESTIONNAIRE = '[data-qa="task-body"], [data-qa="response-question"]'
 # Признак капчи.
 CAPTCHA = '[data-qa="captcha"], .captcha, iframe[src*="captcha"]'
+
+# --- Отклики и приглашения (ответы работодателей) ---
+NEGOTIATIONS_URL = BASE + "/applicant/negotiations"
+# Признак пустого списка откликов (data-qa может содержать несколько значений).
+NEG_EMPTY = ('[data-qa~="negotiations-list-empty"], '
+             '[data-qa="negotiations-list-empty-title"]')
+# Контейнер списка откликов (для ограниченного запасного разбора).
+NEG_LIST = '[data-qa~="negotiations-list"], [data-qa^="negotiations-list"]'
+# Карточка одного отклика (варианты — вёрстка менялась).
+NEG_ITEM = ('[data-qa="negotiations-item"], [data-qa^="negotiations-item"], '
+            '[data-qa="negotiation-item"]')
+# Ссылка на вакансию внутри карточки отклика.
+NEG_ITEM_TITLE = '[data-qa="serp-item__title"], a[href*="/vacancy/"]'
+# Работодатель внутри карточки (если есть).
+NEG_ITEM_EMPLOYER = ('[data-qa="negotiations-item-employer"], '
+                     '[data-qa="vacancy-serp__vacancy-employer"]')

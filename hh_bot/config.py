@@ -60,3 +60,43 @@ def save(crit: Criteria, path: str = CONFIG_PATH) -> None:
         yaml.safe_dump(
             asdict(crit), f, allow_unicode=True, sort_keys=False, default_flow_style=False
         )
+
+
+def _split(text: str) -> list:
+    """Строку через запятую -> список непустых значений."""
+    return [x.strip() for x in (text or "").split(",") if x.strip()]
+
+
+def _to_int(value, default: int = 0) -> int:
+    """Оставить из значения только цифры и привести к int."""
+    digits = "".join(ch for ch in str(value) if ch.isdigit())
+    return int(digits) if digits else default
+
+
+def from_form(data: dict, base: Criteria | None = None) -> Criteria:
+    """Собрать критерии из данных формы веб-интерфейса.
+
+    data: {professions, region (название города), salary_min, exclude_words,
+           include_words, resume_name, cover_letter, daily_limit, max_pages}.
+    """
+    from .cities_list import CITIES
+
+    crit = base or Criteria()
+    crit.professions = [{"text": t} for t in _split(data.get("professions", ""))]
+
+    # Название города -> id региона hh.ru (113 = вся Россия).
+    city_name = (data.get("region") or "").strip()
+    city_id = CITIES.get(city_name)
+    if city_id is None:
+        low = {k.lower(): v for k, v in CITIES.items()}
+        city_id = low.get(city_name.lower(), "113")
+    crit.region = int(city_id)
+
+    crit.salary_min = _to_int(data.get("salary_min", 0))
+    crit.exclude_words = _split(data.get("exclude_words", ""))
+    crit.include_words = _split(data.get("include_words", ""))
+    crit.resume_name = (data.get("resume_name") or "").strip()
+    crit.cover_letter = (data.get("cover_letter") or "").strip()
+    crit.daily_limit = _to_int(data.get("daily_limit", 150), 150)
+    crit.max_pages = _to_int(data.get("max_pages", 5), 5)
+    return crit

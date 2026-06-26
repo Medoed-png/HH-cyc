@@ -122,6 +122,10 @@ def run_applications(page: Page, vacancies: list[Vacancy], crit: Criteria,
             applied_count += 1
             log(f"  ✓ Отклик отправлен ({applied_count})")
         else:
+            # Если на сайте уже есть отклик (в т.ч. сделанный вручную) —
+            # запоминаем, чтобы в следующий раз не открывать вакансию повторно.
+            if "уже откликались" in vacancy.note:
+                storage.mark_applied(vacancy.vacancy_id, vacancy.title, vacancy.company)
             log(f"  – {status}: {vacancy.note}")
         on_update(vacancy)
 

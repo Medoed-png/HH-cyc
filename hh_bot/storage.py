@@ -41,6 +41,17 @@ class Storage:
         )
         self.conn.commit()
 
+    def list_applied(self) -> list:
+        """Список всех откликов (новые сверху) для раздела «Мои отклики»."""
+        cur = self.conn.execute(
+            "SELECT vacancy_id, title, company, applied_at "
+            "FROM applied ORDER BY applied_at DESC"
+        )
+        return [
+            {"id": r[0], "title": r[1], "company": r[2], "applied_at": r[3]}
+            for r in cur.fetchall()
+        ]
+
     def applied_today(self) -> int:
         """Сколько откликов отправлено сегодня (для дневного лимита)."""
         today = datetime.date.today().isoformat()

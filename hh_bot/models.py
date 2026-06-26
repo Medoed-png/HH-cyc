@@ -25,6 +25,15 @@ class Vacancy:
     status: str = STATUS_FOUND
     note: str = ""            # причина пропуска / текст ошибки
 
-    def as_row(self) -> tuple:
-        """Кортеж для таблицы GUI."""
-        return (self.title, self.company, self.salary, self.status, self.note)
+    def to_dict(self) -> dict:
+        """Сериализация для веб-интерфейса (JSON)."""
+        return {
+            "id": self.vacancy_id,
+            "title": self.title,
+            "company": self.company,
+            "url": self.url,
+            "salary": self.salary,
+            "status": self.status,
+            "note": self.note,
+            "profession": self.profession,
+        }

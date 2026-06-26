@@ -13,13 +13,15 @@ from .config import Criteria
 from . import search as search_mod
 from . import filters
 from . import applier
+from . import responses as responses_mod
 from .storage import Storage
 
 # Типы событий, отправляемых в GUI.
-EV_LOG = "log"            # payload: str
-EV_LOGIN = "login"        # payload: bool (залогинен ли)
-EV_VACANCY = "vacancy"    # payload: Vacancy (новая/обновлённая)
-EV_DONE = "done"          # payload: str (что завершилось)
+EV_LOG = "log"              # payload: str
+EV_LOGIN = "login"          # payload: bool (залогинен ли)
+EV_VACANCY = "vacancy"      # payload: Vacancy (новая/обновлённая)
+EV_RESPONSES = "responses"  # payload: list[dict] (ответы работодателей)
+EV_DONE = "done"            # payload: str (что завершилось)
 
 
 class Worker(threading.Thread):
@@ -117,6 +119,18 @@ class Worker(threading.Thread):
     def _cmd_search(self, crit: Criteria) -> None:
         self._do_search(crit)
         self.events.put((EV_DONE, "search"))
+
+    def _cmd_responses(self) -> None:
+        """Собрать ответы работодателей и отправить их в интерфейс."""
+        br = self._ensure_browser()
+        if not br.is_logged_in():
+            self._log("Сначала войдите на hh.ru (кнопка «Войти»).")
+            self.events.put((EV_DONE, "responses"))
+            return
+        self._log("Загружаю ответы на отклики…")
+        items = responses_mod.fetch_responses(br.page, log=self._log)
+        self.events.put((EV_RESPONSES, items))
+        self.events.put((EV_DONE, "responses"))
 
     def _cmd_apply(self, crit: Criteria) -> None:
         self._stop_apply.clear()

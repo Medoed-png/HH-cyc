@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HH-бот — авто-отклик</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="brand">✨ HH-бот <span class="subtitle">авто-отклик на вакансии</span></div>
+    <div id="status" class="status muted">● проверяю вход…</div>
+  </header>
+
+  <main class="content">
+    <!-- Критерии -->
+    <section class="card">
+      <h2 class="card-title">Критерии</h2>
+      <div class="form-grid">
+        <label>Профессии (через запятую)</label>
+        <div class="field"><input id="professions" type="text" autocomplete="off"></div>
+
+        <label>Город / регион</label>
+        <div class="field"><input id="region" type="text" autocomplete="off"></div>
+
+        <label>Мин. зарплата</label>
+        <div class="field"><input id="salary_min" type="text" autocomplete="off"></div>
+
+        <label>Исключающие слова</label>
+        <div class="field"><input id="exclude_words" type="text" autocomplete="off"></div>
+
+        <label>Обязательные слова</label>
+        <div class="field"><input id="include_words" type="text" autocomplete="off"></div>
+
+        <label>Имя резюме</label>
+        <div class="field"><input id="resume_name" type="text" autocomplete="off"></div>
+
+        <label>Дневной лимит откликов</label>
+        <div class="field"><input id="daily_limit" type="text" autocomplete="off"></div>
+
+        <label>Макс. страниц на запрос</label>
+        <div class="field"><input id="max_pages" type="text" autocomplete="off"></div>
+
+        <label>Сопроводительное письмо</label>
+        <div class="field"><textarea id="cover_letter" rows="4"></textarea></div>
+      </div>
+
+      <div class="toolbar">
+        <button id="btn-search" class="btn accent">🔍 Найти</button>
+        <button id="btn-apply" class="btn accent">🚀 Запустить отклики</button>
+        <button id="btn-stop" class="btn danger">⏹ Стоп</button>
+        <span class="spacer"></span>
+        <button id="btn-open" class="btn">Открыть вакансию</button>
+        <button id="btn-login" class="btn">Войти</button>
+        <button id="btn-save" class="btn">Сохранить</button>
+      </div>
+    </section>
+
+    <!-- Вакансии -->
+    <section class="card">
+      <h2 class="card-title">Вакансии</h2>
+      <div class="table-wrap">
+        <table class="vac-table">
+          <thead>
+            <tr>
+              <th>Вакансия</th><th>Компания</th><th>Зарплата</th>
+              <th>Статус</th><th>Примечание</th>
+            </tr>
+          </thead>
+          <tbody id="vac-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Мои отклики (история) -->
+    <section class="card">
+      <div class="card-head">
+        <h2 class="card-title">Мои отклики</h2>
+        <button id="btn-applied" class="btn">↻ Обновить список</button>
+      </div>
+      <div class="table-wrap">
+        <table class="vac-table">
+          <thead>
+            <tr><th>Вакансия</th><th>Компания</th><th>Когда</th></tr>
+          </thead>
+          <tbody id="applied-body">
+            <tr><td colspan="3" class="muted-cell">Нажмите «Обновить список».</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Ответы на отклики -->
+    <section class="card">
+      <div class="card-head">
+        <h2 class="card-title">Ответы на отклики</h2>
+        <button id="btn-responses" class="btn">↻ Обновить ответы</button>
+      </div>
+      <div class="table-wrap">
+        <table class="vac-table">
+          <thead>
+            <tr><th>Вакансия</th><th>Компания</th><th>Ответ</th></tr>
+          </thead>
+          <tbody id="resp-body">
+            <tr><td colspan="3" class="muted-cell">Нажмите «Обновить ответы», чтобы загрузить.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Лог -->
+    <section class="card">
+      <h2 class="card-title">Лог</h2>
+      <div id="log" class="log"></div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

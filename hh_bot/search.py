@@ -55,6 +55,11 @@ def _parse_salary_from(text: str) -> int:
     return int(first) if first else 0
 
 
+def _clean(text: str) -> str:
+    """Схлопнуть пробелы/переносы в одну строку (чтобы строки не сливались)."""
+    return re.sub(r"\s+", " ", (text or "")).strip()
+
+
 def _card_salary(card) -> str:
     """Текст зарплаты карточки: сперва селектор, иначе регулярка по тексту."""
     salary_el = card.query_selector(selectors.CARD_SALARY)
@@ -74,11 +79,11 @@ def _parse_card(card, profession: str) -> Vacancy | None:
     url = url.split("?")[0]  # чистый id без query-параметров
 
     company_el = card.query_selector(selectors.CARD_COMPANY)
-    salary_text = _card_salary(card)
+    salary_text = _clean(_card_salary(card))
     return Vacancy(
         vacancy_id=_extract_vacancy_id(url),
-        title=(title_el.inner_text() or "").strip(),
-        company=(company_el.inner_text() or "").strip() if company_el else "",
+        title=_clean(title_el.inner_text()),
+        company=_clean(company_el.inner_text()) if company_el else "",
         url=url,
         salary=salary_text,
         salary_from=_parse_salary_from(salary_text),
