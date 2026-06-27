@@ -22,10 +22,18 @@ class Storage:
                 vacancy_id TEXT PRIMARY KEY,
                 title      TEXT,
                 company    TEXT,
-                applied_at TEXT
+                applied_at TEXT,
+                source     TEXT DEFAULT 'bot'
             )
             """
         )
+        # Миграция для старых БД: добавить колонку source. Существующие записи
+        # помечаем 'sync' — это ручные/синхронизированные отклики, они НЕ должны
+        # съедать дневной лимит бота.
+        cols = [r[1] for r in self.conn.execute("PRAGMA table_info(applied)").fetchall()]
+        if "source" not in cols:
+            self.conn.execute("ALTER TABLE applied ADD COLUMN source TEXT DEFAULT 'bot'")
+            self.conn.execute("UPDATE applied SET source='sync'")
         self.conn.commit()
 
     def is_applied(self, vacancy_id: str) -> bool:
@@ -34,29 +42,22 @@ class Storage:
         )
         return cur.fetchone() is not None
 
-    def mark_applied(self, vacancy_id: str, title: str, company: str) -> None:
+    def mark_applied(self, vacancy_id: str, title: str, company: str,
+                     source: str = "bot") -> None:
+        """source='bot' — отклик бота (считается в дневной лимит);
+        source='sync' — ручной/синхронизированный (только дедупликация)."""
         self.conn.execute(
-            "INSERT OR REPLACE INTO applied VALUES (?, ?, ?, ?)",
-            (vacancy_id, title, company, datetime.datetime.now().isoformat()),
+            "INSERT OR REPLACE INTO applied VALUES (?, ?, ?, ?, ?)",
+            (vacancy_id, title, company, datetime.datetime.now().isoformat(), source),
         )
         self.conn.commit()
 
-    def list_applied(self) -> list:
-        """Список всех откликов (новые сверху) для раздела «Мои отклики»."""
-        cur = self.conn.execute(
-            "SELECT vacancy_id, title, company, applied_at "
-            "FROM applied ORDER BY applied_at DESC"
-        )
-        return [
-            {"id": r[0], "title": r[1], "company": r[2], "applied_at": r[3]}
-            for r in cur.fetchall()
-        ]
-
     def applied_today(self) -> int:
-        """Сколько откликов отправлено сегодня (для дневного лимита)."""
+        """Сколько откликов БОТ отправил сегодня (для дневного лимита)."""
         today = datetime.date.today().isoformat()
         cur = self.conn.execute(
-            "SELECT COUNT(*) FROM applied WHERE applied_at LIKE ?", (today + "%",)
+            "SELECT COUNT(*) FROM applied WHERE applied_at LIKE ? AND source='bot'",
+            (today + "%",),
         )
         return cur.fetchone()[0]
 

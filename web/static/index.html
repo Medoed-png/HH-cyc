@@ -15,7 +15,10 @@
   <main class="content">
     <!-- Критерии -->
     <section class="card">
-      <h2 class="card-title">Критерии</h2>
+      <div class="card-head">
+        <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Критерии</h2></div>
+      </div>
+      <div class="card-body">
       <div class="form-grid">
         <label>Профессии (через запятую)</label>
         <div class="field"><input id="professions" type="text" autocomplete="off"></div>
@@ -54,11 +57,15 @@
         <button id="btn-login" class="btn">Войти</button>
         <button id="btn-save" class="btn">Сохранить</button>
       </div>
+      </div>
     </section>
 
     <!-- Вакансии -->
     <section class="card">
-      <h2 class="card-title">Вакансии</h2>
+      <div class="card-head">
+        <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Вакансии</h2></div>
+      </div>
+      <div class="card-body">
       <div class="table-wrap">
         <table class="vac-table">
           <thead>
@@ -70,50 +77,52 @@
           <tbody id="vac-body"></tbody>
         </table>
       </div>
-    </section>
-
-    <!-- Мои отклики (история) -->
-    <section class="card">
-      <div class="card-head">
-        <h2 class="card-title">Мои отклики</h2>
-        <button id="btn-applied" class="btn">↻ Обновить список</button>
-      </div>
-      <div class="table-wrap">
-        <table class="vac-table">
-          <thead>
-            <tr><th>Вакансия</th><th>Компания</th><th>Когда</th></tr>
-          </thead>
-          <tbody id="applied-body">
-            <tr><td colspan="3" class="muted-cell">Нажмите «Обновить список».</td></tr>
-          </tbody>
-        </table>
       </div>
     </section>
 
     <!-- Ответы на отклики -->
     <section class="card">
       <div class="card-head">
-        <h2 class="card-title">Ответы на отклики</h2>
+        <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Ответы на отклики</h2></div>
         <button id="btn-responses" class="btn">↻ Обновить ответы</button>
       </div>
+      <div class="card-body">
+      <div id="resp-unread" class="unread-bar" style="display:none"></div>
       <div class="table-wrap">
         <table class="vac-table">
           <thead>
-            <tr><th>Вакансия</th><th>Компания</th><th>Ответ</th></tr>
+            <tr><th>Вакансия</th><th>Компания</th><th>Когда</th><th>Статус</th><th>Ответ</th></tr>
           </thead>
           <tbody id="resp-body">
-            <tr><td colspan="3" class="muted-cell">Нажмите «Обновить ответы», чтобы загрузить.</td></tr>
+            <tr><td colspan="5" class="muted-cell">Нажмите «Обновить ответы», чтобы загрузить.</td></tr>
           </tbody>
         </table>
+      </div>
       </div>
     </section>
 
     <!-- Лог -->
     <section class="card">
-      <h2 class="card-title">Лог</h2>
-      <div id="log" class="log"></div>
+      <div class="card-head">
+        <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Лог</h2></div>
+      </div>
+      <div class="card-body">
+        <div id="log" class="log"></div>
+      </div>
     </section>
   </main>
+
+  <!-- Окно подтверждения авто-откликов -->
+  <div id="modal" class="modal" style="display:none">
+    <div class="modal-box">
+      <div class="modal-title">🚀 Запустить авто-отклики?</div>
+      <div id="modal-text" class="modal-text"></div>
+      <div class="modal-actions">
+        <button id="modal-cancel" class="btn">Отмена</button>
+        <button id="modal-ok" class="btn accent">Запустить</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>

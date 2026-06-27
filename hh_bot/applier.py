@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import random
+import re
 import time
 
-from playwright.sync_api import Page
+from playwright.sync_api import Frame, Page
 
 from . import selectors
 from .config import Criteria
@@ -15,37 +16,304 @@ from .storage import Storage
 _WAIT_PAGE = 1000
 _WAIT_ACTION = 1500
 _WAIT_TOGGLE = 500
+# Сколько максимум ждём появления inline-поля письма, прежде чем уйти в чат, c.
+_INLINE_WAIT_SECONDS = 10.0
+# Короткая проба: если за это время в DOM нет НИ поля письма, НИ его информера —
+# это одно-кликовый отклик (кладовщик/грузчик), не ждём весь дедлайн, а сразу
+# уходим в фолбэк-чат. Для медсестры поле появляется в DOM быстрее этого порога.
+_INLINE_PROBE_SECONDS = 4.0
 
 
 def _has_captcha(page: Page) -> bool:
     return page.query_selector(selectors.CAPTCHA) is not None
 
 
-def _fill_cover_letter(page: Page, text: str) -> None:
-    """Вставить сопроводительное письмо, если поле доступно (ошибки игнорируем)."""
-    text = text.strip()
-    if not text:
-        return
-    toggle = page.query_selector(selectors.COVER_LETTER_TOGGLE)
-    if toggle:
+def _dismiss_popup(page: Page) -> None:
+    """Закрыть попап «дополнительные данные», если он перекрыл поле/кнопку."""
+    btn = page.query_selector(selectors.DATA_COLLECTOR_CLOSE)
+    if btn:
         try:
-            toggle.click()
+            btn.click()
             page.wait_for_timeout(_WAIT_TOGGLE)
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
-    letter = page.query_selector(selectors.COVER_LETTER_INPUT)
-    if letter:
+
+
+def _norm(text: str) -> str:
+    """Схлопнуть пробелы и привести к нижнему регистру для сравнения текста."""
+    return re.sub(r"\s+", " ", (text or "")).strip().lower()
+
+
+# --- INLINE-путь (поле письма прямо на странице вакансии) ----------------------
+
+def _find_letter_field(page: Page):
+    """Первое ВИДИМОЕ поле письма из COVER_LETTER_INPUT или None.
+
+    Первый textarea в DOM бывает скрытым (шаблон/копия), поэтому перебираем все
+    совпадения и возвращаем первое реально видимое.
+    """
+    for el in page.query_selector_all(selectors.COVER_LETTER_INPUT):
         try:
-            letter.fill(text)
-        except Exception:
+            if el.is_visible():
+                return el
+        except Exception:  # noqa: BLE001
             pass
+    return None
+
+
+def _letter_field_in_dom(page: Page) -> bool:
+    """Есть ли в DOM хоть какой-то намёк на inline-поле письма (видимое или нет).
+
+    Различает «поле ещё монтируется/свёрнуто» (есть informer или textarea —
+    стоит подождать) и «поля нет вообще» (одно-кликовый отклик — сразу в чат).
+    """
+    return (page.query_selector(selectors.COVER_LETTER_INPUT) is not None
+            or page.query_selector(selectors.COVER_LETTER_INFORMER) is not None)
+
+
+def _reveal_letter_field(page: Page) -> None:
+    """Помочь полю письма проявиться, если оно лениво/свёрнуто.
+
+    Видимого поля нет по двум причинам:
+      • информер ещё не смонтирован — подкручиваем страницу, чтобы вызвать его
+        ленивую отрисовку;
+      • textarea есть в DOM, но свёрнут (display:none) — кликаем по контейнеру
+        информера, чтобы развернуть.
+    Контейнер трогаем только когда видимого поля ещё нет, а textarea внутри уже
+    присутствует — без лишних кликов и побочных эффектов.
+    """
+    informer = page.query_selector(selectors.COVER_LETTER_INFORMER)
+    if informer is None:
+        try:
+            page.mouse.wheel(0, 700)  # вызвать ленивую отрисовку информера ниже
+        except Exception:  # noqa: BLE001
+            pass
+        return
+    try:
+        informer.scroll_into_view_if_needed()
+        if informer.query_selector("textarea") and _find_letter_field(page) is None:
+            informer.click()  # развернуть свёрнутое поле
+            page.wait_for_timeout(_WAIT_TOGGLE)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _send_cover_letter(page: Page, text: str, log) -> bool:
+    """INLINE-путь: дождаться поля письма, вписать текст и отправить.
+
+    Поле появляется асинхронно; мешать могут попап «доп. данные», тост-плашка
+    «Отклик отправлен» и лениво/свёрнутый информер. Поэтому на каждой итерации
+    закрываем попап, ищем видимое поле, пробуем его проявить (скролл + разворот).
+    Если за короткую пробу поля нет в DOM ВООБЩЕ — это одно-кликовый отклик,
+    выходим сразу (вернёт False → вызывающий уйдёт в чат). True — только если
+    письмо реально вписано и отправлено inline; при неудаче письмо НЕ
+    отправляется (нет двойной отправки).
+    """
+    text = (text or "").strip()
+    if not text:
+        return False
+
+    letter = None
+    deadline = time.monotonic() + _INLINE_WAIT_SECONDS
+    probe_until = time.monotonic() + _INLINE_PROBE_SECONDS
+    while time.monotonic() < deadline:
+        _dismiss_popup(page)
+        letter = _find_letter_field(page)
+        if letter is not None:
+            break
+        _reveal_letter_field(page)
+        letter = _find_letter_field(page)
+        if letter is not None:
+            break
+        # Ранний выход в чат: поля письма нет в DOM и проба истекла.
+        if time.monotonic() > probe_until and not _letter_field_in_dom(page):
+            return False
+        page.wait_for_timeout(500)
+
+    if letter is None:
+        return False  # фолбэк-сообщение пишет вызывающий _deliver_cover_letter
+
+    try:
+        letter.scroll_into_view_if_needed()
+        letter.click()
+        letter.fill(text)
+    except Exception as e:  # noqa: BLE001
+        log(f"  не удалось вписать письмо: {e}")
+        return False
+
+    _dismiss_popup(page)
+    submit = page.query_selector(selectors.SUBMIT_RESPONSE)
+    if submit is None:
+        log("  кнопка отправки письма не найдена")
+        return False
+    try:
+        submit.click()
+        page.wait_for_timeout(_WAIT_ACTION)
+    except Exception as e:  # noqa: BLE001
+        log(f"  не удалось отправить письмо: {e}")
+        return False
+    return True
+
+
+# --- ФОЛБЭК-путь (письмо отдельным сообщением в чат работодателя) ---------------
+
+def _letter_already_in_chat(frame: Frame, text: str) -> bool:
+    """Есть ли уже сообщение с текстом письма.
+
+    Используется и как защита от двойной отправки (перед отправкой), и как
+    подтверждение доставки (после). Сравниваем нормализованный префикс письма
+    (60 симв.) с текстом пузырей — бабл показывает письмо целиком.
+    """
+    needle = _norm(text)[:60]
+    if not needle:
+        return False
+    try:
+        bubbles = frame.eval_on_selector_all(
+            selectors.CHAT_BUBBLE_TEXT, "els => els.map(e => e.textContent || '')")
+    except Exception:  # noqa: BLE001
+        return False
+    return any(needle in _norm(b) for b in bubbles)
+
+
+def _open_chat_frame(page: Page, vacancy_id: str, log) -> Frame | None:
+    """Открыть чат ИМЕННО этой вакансии и вернуть его iframe (chatik.hh.ru/chat).
+
+    На странице вакансии кнопки чата нет — она есть только в карточке отклика на
+    /applicant/negotiations. Поэтому идём туда, находим карточку по id вакансии
+    и жмём «Перейти в чат». Образец доступа к iframe — responses._read_chat.
+    """
+    if not vacancy_id:
+        return None
+    prev_urls = {f.url for f in page.frames
+                 if selectors.CHAT_FRAME_URL_PART in (f.url or "")}
+
+    page.goto(selectors.NEGOTIATIONS_URL, wait_until="domcontentloaded")
+    page.wait_for_timeout(_WAIT_ACTION)
+
+    card = None
+    for c in page.query_selector_all(selectors.NEG_ITEM):
+        if c.query_selector(f'a[href*="/vacancy/{vacancy_id}"]'):
+            card = c
+            break
+    if card is None:
+        log("  отклик не найден в списке — письмо через чат невозможно")
+        return None
+
+    btn = card.query_selector(selectors.NEG_CHAT_BUTTON)
+    if btn is None:
+        log("  кнопка чата не найдена в карточке отклика")
+        return None
+    try:
+        btn.click()
+    except Exception as e:  # noqa: BLE001
+        log(f"  не удалось открыть чат: {e}")
+        return None
+
+    found = None
+    for _ in range(20):  # до ~6 c ждём iframe чата
+        page.wait_for_timeout(300)
+        frame = next((f for f in page.frames
+                      if selectors.CHAT_FRAME_URL_PART in (f.url or "")), None)
+        if frame is None:
+            continue
+        found = frame
+        if frame.url not in prev_urls:  # появился/сменился на чат этой вакансии
+            break
+    if found is None:
+        log("  чат не открылся (iframe не появился)")
+        return None
+    page.wait_for_timeout(_WAIT_ACTION)  # дать чату прогрузиться
+    return found
+
+
+def _send_letter_via_chat(page: Page, vacancy_id: str, text: str, log) -> bool:
+    """Фолбэк: отправить письмо отдельным сообщением в чат работодателя.
+
+    Inline-поле письма для части вакансий (кладовщик/грузчик) не появляется.
+    Тогда открываем чат вакансии (iframe chatik.hh.ru) и пишем письмо обычным
+    сообщением — для работодателя результат эквивалентен (текст виден в чате;
+    inline-письмо тоже отображается там же как chat-bubble). True — если ушло.
+    """
+    text = (text or "").strip()
+    if not text:
+        return False
+
+    frame = _open_chat_frame(page, vacancy_id, log)
+    if frame is None:
+        return False
+
+    # Ждём поле ввода сообщения внутри iframe (чат грузится асинхронно).
+    box = None
+    for _ in range(20):  # до ~6 c
+        try:
+            candidate = frame.query_selector(selectors.CHAT_MESSAGE_INPUT)
+            if candidate is not None and candidate.is_visible():
+                box = candidate
+                break
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(300)
+    if box is None:
+        log("  поле ввода чата не появилось — письмо не отправлено")
+        return False
+
+    # Защита от двойной отправки: письмо уже среди сообщений — выходим.
+    if _letter_already_in_chat(frame, text):
+        log("  письмо уже есть в чате — повторно не отправляю")
+        return True
+
+    try:
+        box.click()
+        box.fill(text)
+    except Exception as e:  # noqa: BLE001
+        log(f"  не удалось вписать письмо в чат: {e}")
+        return False
+
+    send = frame.query_selector(selectors.CHAT_SEND_BUTTON)
+    if send is None:
+        log("  кнопка отправки в чате не найдена")
+        return False
+    try:
+        send.click()
+    except Exception as e:  # noqa: BLE001
+        log(f"  не удалось отправить письмо в чат: {e}")
+        return False
+
+    # Подтверждение по появлению пузыря-сообщения. Клик отправки уже прошёл —
+    # при несчитанном подтверждении НЕ перекликиваем (иначе дубль).
+    for _ in range(10):  # до ~3 c
+        page.wait_for_timeout(300)
+        if _letter_already_in_chat(frame, text):
+            log("  письмо отправлено сообщением в чат")
+            return True
+    log("  письмо отправлено в чат (подтверждение не считано)")
+    return True
+
+
+def _deliver_cover_letter(page: Page, vacancy_id: str, text: str, log) -> str:
+    """Гибрид доставки письма. Возвращает способ: "inline" | "chat" | "".
+
+    Сначала быстрый inline-путь (поле письма на странице вакансии). Если поля
+    нет (кладовщик/грузчик) — фолбэк: открыть чат вакансии через страницу
+    «Отклики» и отправить письмо сообщением. Inline-путь при неудаче письмо НЕ
+    отправляет, поэтому двойной отправки нет.
+    """
+    if not (text or "").strip():
+        return ""
+    # Доставка письма СООБЩЕНИЕМ В ЧАТ — единый надёжный путь для всех типов
+    # вакансий (inline-поле на части вакансий отсутствует или подменяется чужим
+    # textarea). Чат существует после любого созданного отклика.
+    if _send_letter_via_chat(page, vacancy_id, text, log):
+        return "chat"
+    return ""
 
 
 def apply_to(page: Page, vacancy: Vacancy, crit: Criteria, log=lambda m: None) -> str:
     """Откликнуться на одну вакансию. Возвращает итоговый статус.
 
-    Последовательность: открыть вакансию → проверить капчу/повторный отклик →
-    нажать «Откликнуться» → пропустить тест/анкету → вставить письмо → отправить.
+    На hh.ru клик «Откликнуться» сразу создаёт отклик. Сопроводительное письмо
+    доставляем гибридно: сначала inline-поле (медсестра/комплектовщик), а если
+    его нет (кладовщик/грузчик) — отдельным сообщением в чат работодателя.
     """
     page.goto(vacancy.url, wait_until="domcontentloaded")
     page.wait_for_timeout(_WAIT_PAGE)
@@ -60,7 +328,7 @@ def apply_to(page: Page, vacancy: Vacancy, crit: Criteria, log=lambda m: None) -
 
     respond_btn = page.query_selector(selectors.RESPOND_BUTTON)
     if respond_btn is None:
-        vacancy.note = "кнопка отклика не найдена"
+        vacancy.note = "кнопка отклика не найдена"  # внешние вакансии (Пятёрочка)
         return STATUS_SKIPPED
 
     respond_btn.click()
@@ -74,15 +342,37 @@ def apply_to(page: Page, vacancy: Vacancy, crit: Criteria, log=lambda m: None) -
         vacancy.note = "требуется тест/анкета — пропуск"
         return STATUS_SKIPPED
 
-    _fill_cover_letter(page, crit.cover_letter)
+    _dismiss_popup(page)
 
-    submit = page.query_selector(selectors.SUBMIT_RESPONSE)
-    if submit is None:
-        vacancy.note = "кнопка подтверждения не найдена"
+    # Подтверждение отклика (создаётся самим кликом «Откликнуться») ДО доставки
+    # письма: фолбэк-чат уводит на страницу «Отклики», поэтому сперва убеждаемся,
+    # что отклик принят, читая основной DOM вакансии.
+    responded = False
+    for _ in range(8):  # до ~4 c
+        if page.query_selector(selectors.ALREADY_RESPONDED) is not None:
+            responded = True
+            break
+        if page.query_selector(selectors.RESPOND_BUTTON) is None:
+            responded = True  # кнопка исчезла — отклик принят, ссылка дорисуется
+            break
+        page.wait_for_timeout(_WAIT_TOGGLE)
+    if not responded:
+        vacancy.note = "отклик не подтвердился"
         return STATUS_ERROR
-    submit.click()
-    page.wait_for_timeout(_WAIT_ACTION)
 
+    # Гибрид доставки письма: inline-поле на странице, иначе — сообщением в чат.
+    letter = (crit.cover_letter or "").strip()
+    letter_method = _deliver_cover_letter(page, vacancy.vacancy_id, letter, log)
+
+    # Статус не зависит от судьбы письма — отклик уже создан, письмо вторично.
+    if not letter:
+        vacancy.note = "отклик без письма (шаблон пуст)"
+    elif letter_method == "inline":
+        vacancy.note = "с сопроводительным письмом"
+    elif letter_method == "chat":
+        vacancy.note = "письмо отправлено в чат"
+    else:
+        vacancy.note = "письмо не доставлено (отклик есть)"
     return STATUS_APPLIED
 
 
@@ -123,9 +413,10 @@ def run_applications(page: Page, vacancies: list[Vacancy], crit: Criteria,
             log(f"  ✓ Отклик отправлен ({applied_count})")
         else:
             # Если на сайте уже есть отклик (в т.ч. сделанный вручную) —
-            # запоминаем, чтобы в следующий раз не открывать вакансию повторно.
+            # запоминаем для дедупликации (source='sync', не считаем в лимит).
             if "уже откликались" in vacancy.note:
-                storage.mark_applied(vacancy.vacancy_id, vacancy.title, vacancy.company)
+                storage.mark_applied(vacancy.vacancy_id, vacancy.title, vacancy.company,
+                                     source="sync")
             log(f"  – {status}: {vacancy.note}")
         on_update(vacancy)
 

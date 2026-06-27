@@ -17,7 +17,7 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 from hh_bot import config as config_mod
 from hh_bot.cities_list import CITIES
 from hh_bot.suggest import fetch_suggestions
-from hh_bot.worker import Worker, EV_LOG, EV_LOGIN, EV_VACANCY, EV_RESPONSES
+from hh_bot.worker import (Worker, EV_LOG, EV_LOGIN, EV_VACANCY, EV_RESPONSES, EV_CHAT)
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
@@ -49,7 +49,11 @@ def _pump_events() -> None:
         elif kind == EV_VACANCY:
             msg = {"type": "vacancy", "vacancy": payload.to_dict()}
         elif kind == EV_RESPONSES:
-            msg = {"type": "responses", "items": payload}
+            msg = {"type": "responses",
+                   "items": payload["items"], "unread": payload["unread"]}
+        elif kind == EV_CHAT:
+            msg = {"type": "chat",
+                   "vacancy_id": payload["vacancy_id"], "messages": payload["messages"]}
         else:
             continue
         _sse_queue.put(msg)
@@ -127,18 +131,11 @@ def api_responses():
     return jsonify({"ok": True})
 
 
-@app.route("/api/applied")
-def api_applied():
-    """История откликов из локальной БД (раздел «Мои отклики»)."""
-    from hh_bot.storage import Storage
-
-    store = Storage()
-    items = store.list_applied()
-    store.close()
-    for it in items:
-        it["url"] = (f"https://hh.ru/vacancy/{it['id']}"
-                     if str(it["id"]).isdigit() else "https://hh.ru/applicant/negotiations")
-    return jsonify(items)
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    vacancy_id = str(request.get_json(force=True).get("vacancy_id", ""))
+    worker.submit("chat", vacancy_id=vacancy_id)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/suggest")

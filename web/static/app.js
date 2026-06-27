@@ -172,59 +172,119 @@ function upsertVacancy(v) {
   if (tr.dataset.selected) tr.classList.add("selected");
 }
 
-// ---------- мои отклики (история) ----------
-function formatDate(iso) {
-  if (!iso) return "";
-  return iso.replace("T", " ").slice(0, 16);  // YYYY-MM-DD HH:MM
-}
-
-async function loadApplied() {
-  $("applied-body").innerHTML =
-    '<tr><td colspan="3" class="muted-cell">Загружаю…</td></tr>';
-  const items = await (await fetch("/api/applied")).json();
-  const body = $("applied-body");
-  body.innerHTML = "";
-  if (!items.length) {
-    body.innerHTML =
-      '<tr><td colspan="3" class="muted-cell">Вы ещё ни на что не откликались.</td></tr>';
-    return;
-  }
-  for (const r of items) {
-    const tr = document.createElement("tr");
-    tr.innerHTML =
-      `<td>${r.title || "—"}</td><td>${r.company || ""}</td><td>${formatDate(r.applied_at)}</td>`;
-    tr.style.cursor = "pointer";
-    tr.title = "Открыть на hh.ru";
-    tr.addEventListener("dblclick", () => window.open(r.url, "_blank"));
-    body.appendChild(tr);
-  }
-}
-
 // ---------- ответы работодателей ----------
+const chatCache = new Map();   // vacancy_id -> messages
+const openPanels = new Map();  // vacancy_id -> panel element (открыта)
+const respById = new Map();    // vacancy_id -> r
+
 function statusBadge(status) {
   const s = status.toLowerCase();
   let cls = "b-gray";
-  if (s.includes("приглаш") || s.includes("оффер")) cls = "b-green";
+  if (s.includes("собеседов") || s.includes("приглаш") || s.includes("оффер")) cls = "b-green";
   else if (s.includes("отказ")) cls = "b-red";
-  else if (s.includes("просмотр") || s.includes("сообщ") || s === "ответ") cls = "b-blue";
+  else if (s === "просмотрен" || s.includes("сообщ")) cls = "b-blue";
   return `<span class="badge ${cls}">${status}</span>`;
 }
 
-function renderResponses(items) {
+function renderResponses(items, unread) {
+  // Полоса с числом непрочитанных сообщений.
+  const bar = $("resp-unread");
+  if (unread > 0) {
+    bar.style.display = "block";
+    bar.textContent = `💬 У вас ${unread} непрочитанных сообщений — нажмите «Посмотреть ответ», чтобы прочитать на hh.ru.`;
+  } else {
+    bar.style.display = "none";
+  }
+
   const body = $("resp-body");
   body.innerHTML = "";
+  chatCache.clear(); openPanels.clear(); respById.clear();
   if (!items.length) {
-    body.innerHTML = '<tr><td colspan="3" class="muted-cell">Ответов пока нет.</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" class="muted-cell">Ответов пока нет.</td></tr>';
     return;
   }
   for (const r of items) {
+    respById.set(r.id, r);
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${r.title}</td><td>${r.company || ""}</td><td>${statusBadge(r.status)}</td>`;
-    tr.style.cursor = "pointer";
-    tr.title = "Открыть на hh.ru";
+    const btnCls = r.responded ? "btn-sm" : "btn-sm ghost";
+    tr.innerHTML =
+      `<td>${r.title}</td><td>${r.company || ""}</td><td>${r.date || ""}</td>` +
+      `<td>${statusBadge(r.status)}</td>` +
+      `<td><button class="${btnCls}">Посмотреть ответ</button></td>`;
     tr.addEventListener("dblclick", () => window.open(r.url, "_blank"));
+    tr.querySelector("button").addEventListener("click", () => toggleMessages(tr, r));
     body.appendChild(tr);
   }
+}
+
+function buildMessages(panel, messages, url) {
+  panel.innerHTML = "";
+  if (!messages || !messages.length) {
+    const p = document.createElement("div");
+    p.className = "msg-empty";
+    p.textContent = "Сообщений в чате нет.";
+    panel.appendChild(p);
+  } else {
+    for (const m of messages) {
+      const msg = document.createElement("div");
+      msg.className = "msg";
+      const head = document.createElement("div");
+      head.className = "msg-head";
+      const author = document.createElement("span");
+      author.className = "msg-author";
+      author.textContent = m.author || "Работодатель";
+      const time = document.createElement("span");
+      time.className = "msg-time";
+      time.textContent = m.time || "";
+      head.appendChild(author);
+      head.appendChild(time);
+      const text = document.createElement("div");
+      text.className = "msg-text";
+      text.textContent = m.text;
+      msg.appendChild(head);
+      msg.appendChild(text);
+      panel.appendChild(msg);
+    }
+  }
+  const link = document.createElement("a");
+  link.className = "msg-link";
+  link.href = url;
+  link.target = "_blank";
+  link.textContent = "Открыть полный чат на hh.ru →";
+  panel.appendChild(link);
+}
+
+function toggleMessages(tr, r) {
+  // Если панель уже открыта — закрыть.
+  if (tr.nextSibling && tr.nextSibling.classList && tr.nextSibling.classList.contains("msg-row")) {
+    tr.nextSibling.remove();
+    openPanels.delete(r.id);
+    return;
+  }
+  const row = document.createElement("tr");
+  row.className = "msg-row";
+  const td = document.createElement("td");
+  td.colSpan = 5;
+  const panel = document.createElement("div");
+  panel.className = "chat-panel";
+  td.appendChild(panel);
+  row.appendChild(td);
+  tr.after(row);
+  openPanels.set(r.id, panel);
+
+  if (chatCache.has(r.id)) {
+    buildMessages(panel, chatCache.get(r.id), r.url);
+  } else {
+    panel.innerHTML = '<div class="msg-empty">Загружаю переписку…</div>';
+    api("/api/chat", { vacancy_id: r.id });  // придёт через SSE (type: chat)
+  }
+}
+
+function onChatLoaded(vacancyId, messages) {
+  chatCache.set(vacancyId, messages);
+  const panel = openPanels.get(vacancyId);
+  const r = respById.get(vacancyId);
+  if (panel && r) buildMessages(panel, messages, r.url);
 }
 
 // ---------- поток событий (SSE) ----------
@@ -235,7 +295,8 @@ function connectEvents() {
     if (msg.type === "log") logLine(msg.text);
     else if (msg.type === "login") setStatus(msg.logged_in);
     else if (msg.type === "vacancy") upsertVacancy(msg.vacancy);
-    else if (msg.type === "responses") renderResponses(msg.items);
+    else if (msg.type === "responses") renderResponses(msg.items, msg.unread || 0);
+    else if (msg.type === "chat") onChatLoaded(msg.vacancy_id, msg.messages);
   };
   es.onerror = () => logLine("Соединение с сервером прервано, переподключаюсь…");
 }
@@ -244,6 +305,41 @@ function setStatus(loggedIn) {
   const el = $("status");
   el.className = "status " + (loggedIn ? "ok" : "bad");
   el.textContent = loggedIn ? "● вы вошли" : "● не авторизованы";
+}
+
+// ---------- сворачивание разделов ----------
+function bindCollapsibles() {
+  document.querySelectorAll(".card-toggle").forEach((head) => {
+    head.addEventListener("click", () => {
+      head.closest(".card").classList.toggle("collapsed");
+    });
+  });
+}
+
+// ---------- модальное окно подтверждения ----------
+let _modalOk = null;
+
+function showModal(onConfirm) {
+  _modalOk = onConfirm;
+  $("modal").style.display = "flex";
+}
+
+function hideModal() {
+  $("modal").style.display = "none";
+  _modalOk = null;
+}
+
+function bindModal() {
+  $("modal-cancel").onclick = hideModal;
+  $("modal-ok").onclick = () => {
+    const cb = _modalOk;
+    hideModal();
+    if (cb) cb();
+  };
+  // Клик по затемнению — отмена.
+  $("modal").addEventListener("click", (e) => {
+    if (e.target === $("modal")) hideModal();
+  });
 }
 
 // ---------- кнопки ----------
@@ -257,16 +353,15 @@ function bindButtons() {
   $("btn-search").onclick = () => { clearTable(); api("/api/search", collectForm()); };
   $("btn-apply").onclick = () => {
     const d = collectForm();
-    if (!confirm(`Запустить АВТО-отклики?\nДневной лимит: ${d.daily_limit}.\nБот будет откликаться сам на все подходящие вакансии.`))
-      return;
-    clearTable();
-    api("/api/apply", d);
+    $("modal-text").textContent =
+      `Дневной лимит: ${d.daily_limit} откликов. Бот откликнется на найденные вакансии с сопроводительным письмом (строки перекрасятся по статусу).`;
+    // Таблицу НЕ очищаем — откликаемся на уже найденные, строки обновятся на месте.
+    showModal(() => api("/api/apply", d));
   };
   $("btn-stop").onclick = () => api("/api/stop");
   $("btn-login").onclick = () => api("/api/login");
-  $("btn-applied").onclick = loadApplied;
   $("btn-responses").onclick = () => {
-    $("resp-body").innerHTML = '<tr><td colspan="3" class="muted-cell">Загружаю…</td></tr>';
+    $("resp-body").innerHTML = '<tr><td colspan="5" class="muted-cell">Загружаю…</td></tr>';
     api("/api/responses");
   };
   $("btn-open").onclick = openSelected;
@@ -284,5 +379,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   attachAutocomplete($("professions"), fetchProfessions, true);
   attachAutocomplete($("region"), fetchCities, false);
   bindButtons();
+  bindModal();
+  bindCollapsibles();
   connectEvents();
 });

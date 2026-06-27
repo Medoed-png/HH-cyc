@@ -1,4 +1,8 @@
-"""Сбор ответов работодателей со страницы «Отклики и приглашения» hh.ru."""
+"""Сбор ответов работодателей со страницы «Отклики и приглашения» hh.ru.
+
+Статус берём из тега карточки. Для откликов, где работодатель ответил,
+дополнительно открываем чат (iframe chatik.hh.ru) и читаем сами сообщения.
+"""
 from __future__ import annotations
 
 import re
@@ -7,23 +11,20 @@ from playwright.sync_api import Page
 
 from . import selectors
 
-# Классификация статуса отклика по тексту карточки (ключевые слова -> метка).
-_STATUS_RULES = [
-    (r"приглаш",            "Приглашение"),
-    (r"оффер|предложени",   "Оффер"),
-    (r"отказ|не подош",     "Отказ"),
-    (r"не\s*просмотр",      "Не просмотрено"),
-    (r"просмотр",           "Просмотрено"),
-    (r"новое сообщ|ответил","Сообщение"),
+# Статус из тега карточки: (селектор, метка, ответил_ли_работодатель).
+_STATUS_TAGS = [
+    (selectors.NEG_TAG_INTERVIEW,  "Собеседование", True),
+    (selectors.NEG_TAG_DISCARD,    "Отказ",         True),
+    (selectors.NEG_TAG_VIEWED,     "Просмотрен",    False),
+    (selectors.NEG_TAG_NOT_VIEWED, "Не просмотрен", False),
 ]
 
-
-def _classify(text: str) -> str:
-    low = text.lower()
-    for pattern, label in _STATUS_RULES:
-        if re.search(pattern, low):
-            return label
-    return "Ожидание"
+# JS для извлечения сообщений из iframe чата.
+_CHAT_JS = """els=>els.map(e=>({
+    author: (e.querySelector('[data-qa="chat-bubble-author-name"]')||{}).textContent||'',
+    text:   (e.querySelector('[data-qa="chat-bubble-text"]')||{}).textContent||'',
+    time:   (e.querySelector('[data-qa="chat-buble-display-time"]')||{}).textContent||''
+}))"""
 
 
 def _clean(text: str) -> str:
@@ -31,66 +32,116 @@ def _clean(text: str) -> str:
 
 
 def _abs_url(url: str) -> str:
-    if url.startswith("/"):
-        return selectors.BASE + url
-    return url
+    return selectors.BASE + url if url.startswith("/") else url
+
+
+def _status_of(card) -> tuple[str, bool]:
+    for sel, label, responded in _STATUS_TAGS:
+        if card.query_selector(sel):
+            return label, responded
+    return "Ожидание", False
+
+
+def _unread_count(page: Page) -> int:
+    badge = page.query_selector(selectors.NEG_UNREAD_BADGE)
+    if badge:
+        digits = re.sub(r"\D", "", badge.inner_text() or "")
+        if digits:
+            return int(digits)
+    m = re.match(r"\s*(\d+)", page.title() or "")
+    return int(m.group(1)) if m else 0
+
+
+def _read_chat(page: Page, card, prev_url: str) -> tuple[list, str]:
+    """Открыть чат карточки и прочитать сообщения (author, time, text)."""
+    btn = card.query_selector(selectors.NEG_CHAT_BUTTON)
+    if btn is None:
+        return [], prev_url
+    try:
+        btn.click()
+    except Exception:
+        return [], prev_url
+
+    # Ждём, пока iframe чата сменится на новый.
+    frame = None
+    for _ in range(20):
+        page.wait_for_timeout(300)
+        frame = next((f for f in page.frames if "chatik.hh.ru/chat" in (f.url or "")), None)
+        if frame and frame.url != prev_url:
+            break
+    if frame is None:
+        return [], prev_url
+    page.wait_for_timeout(1200)  # дать сообщениям отрисоваться
+
+    try:
+        raw = frame.eval_on_selector_all('[data-qa="chat-bubble-wrapper"]', _CHAT_JS)
+    except Exception:
+        raw = []
+    messages = [
+        {"author": _clean(m["author"]), "time": _clean(m["time"]), "text": _clean(m["text"])}
+        for m in raw if _clean(m["text"])
+    ]
+    return messages[-12:], frame.url  # последние сообщения
+
+
+def _vacancy_id(url: str) -> str:
+    m = re.search(r"/vacancy/(\d+)", url or "")
+    return m.group(1) if m else ""
 
 
 def _parse_item(card) -> dict | None:
-    """Разобрать карточку одного отклика."""
-    title_el = card.query_selector(selectors.NEG_ITEM_TITLE)
-    if title_el is None:
+    link = card.query_selector(selectors.NEG_ITEM_VACANCY)
+    if link is None:
         return None
-    title = _clean(title_el.inner_text())
+    title = _clean(link.inner_text())
     if not title:
         return None
-    url = _abs_url((title_el.get_attribute("href") or selectors.NEGOTIATIONS_URL).split("?")[0])
-
-    emp_el = card.query_selector(selectors.NEG_ITEM_EMPLOYER)
-    company = _clean(emp_el.inner_text()) if emp_el else ""
-
-    card_text = _clean(card.inner_text())
+    url = _abs_url((link.get_attribute("href") or "").split("?")[0])
+    company_el = card.query_selector(selectors.NEG_ITEM_COMPANY)
+    date_el = card.query_selector(selectors.NEG_ITEM_DATE)
+    status, responded = _status_of(card)
     return {
+        "id": _vacancy_id(url),
         "title": title,
-        "company": company,
-        "status": _classify(card_text),
+        "company": _clean(company_el.inner_text()) if company_el else "",
+        "date": _clean(date_el.inner_text()) if date_el else "",
+        "status": status,
+        "responded": responded,
         "url": url,
     }
 
 
-def fetch_responses(page: Page, log=lambda m: None) -> list[dict]:
-    """Открыть «Отклики и приглашения» и собрать ответы работодателей."""
+def fetch_responses(page: Page, log=lambda m: None) -> dict:
+    """Собрать список откликов (без чтения чатов — оно по требованию).
+
+    Возвращает {"items": [...], "unread": N}.
+    """
     page.goto(selectors.NEGOTIATIONS_URL, wait_until="domcontentloaded")
-    page.wait_for_timeout(3000)
+    page.wait_for_timeout(3500)
 
     if page.query_selector(selectors.NEG_EMPTY):
         log("Откликов пока нет.")
-        return []
+        return {"items": [], "unread": 0}
 
-    cards = page.query_selector_all(selectors.NEG_ITEM)
-    if not cards:
-        # Запасной разбор — ТОЛЬКО внутри контейнера откликов, чтобы не зацепить
-        # рекомендованные вакансии на странице.
-        container = page.query_selector(selectors.NEG_LIST)
-        if container is None:
-            log("Список откликов не распознан (вёрстка hh.ru). "
-                "Пришлите скриншот этой страницы — подстрою селекторы.")
-            return []
-        seen, results = set(), []
-        for link in container.query_selector_all('a[href*="/vacancy/"]'):
-            title = _clean(link.inner_text())
-            url = _abs_url((link.get_attribute("href") or "").split("?")[0])
-            if not title or url in seen:
-                continue
-            seen.add(url)
-            results.append({"title": title, "company": "", "status": "Ответ", "url": url})
-        log(f"Ответов получено: {len(results)}")
-        return results
-
-    results = []
-    for card in cards:
+    items = []
+    for card in page.query_selector_all(selectors.NEG_ITEM):
         item = _parse_item(card)
         if item is not None:
-            results.append(item)
-    log(f"Ответов получено: {len(results)}")
-    return results
+            items.append(item)
+
+    unread = _unread_count(page)
+    answered = sum(1 for i in items if i["responded"])
+    log(f"Откликов: {len(items)} · ответов работодателей: {answered} · "
+        f"непрочитанных: {unread}")
+    return {"items": items, "unread": unread}
+
+
+def fetch_chat(page: Page, vacancy_id: str, log=lambda m: None) -> list:
+    """Открыть чат конкретной вакансии и прочитать сообщения."""
+    page.goto(selectors.NEGOTIATIONS_URL, wait_until="domcontentloaded")
+    page.wait_for_timeout(3000)
+    for card in page.query_selector_all(selectors.NEG_ITEM):
+        if card.query_selector(f'a[href*="/vacancy/{vacancy_id}"]'):
+            msgs, _ = _read_chat(page, card, "")
+            return msgs
+    return []

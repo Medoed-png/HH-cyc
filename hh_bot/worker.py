@@ -20,7 +20,8 @@ from .storage import Storage
 EV_LOG = "log"              # payload: str
 EV_LOGIN = "login"          # payload: bool (залогинен ли)
 EV_VACANCY = "vacancy"      # payload: Vacancy (новая/обновлённая)
-EV_RESPONSES = "responses"  # payload: list[dict] (ответы работодателей)
+EV_RESPONSES = "responses"  # payload: dict {items, unread}
+EV_CHAT = "chat"            # payload: dict {vacancy_id, messages}
 EV_DONE = "done"            # payload: str (что завершилось)
 
 
@@ -35,6 +36,7 @@ class Worker(threading.Thread):
         self._browser: Browser | None = None
         self._storage = Storage()
         self._running = True
+        self._last_suitable: list | None = None  # найденные вакансии для откликов
 
     # --- API для GUI (потокобезопасно через очередь) ---
     def submit(self, name: str, **kwargs) -> None:
@@ -48,6 +50,7 @@ class Worker(threading.Thread):
 
     # --- внутреннее ---
     def _log(self, msg: str) -> None:
+        print("[bot]", msg, flush=True)  # дублируем в консоль сервера для отладки
         self.events.put((EV_LOG, msg))
 
     def _ensure_browser(self) -> Browser:
@@ -114,6 +117,7 @@ class Worker(threading.Thread):
         # В таблицу выводим только подходящие вакансии.
         for v in suitable:
             self.events.put((EV_VACANCY, v))
+        self._last_suitable = suitable  # запоминаем для откликов
         return suitable
 
     def _cmd_search(self, crit: Criteria) -> None:
@@ -128,18 +132,53 @@ class Worker(threading.Thread):
             self.events.put((EV_DONE, "responses"))
             return
         self._log("Загружаю ответы на отклики…")
-        items = responses_mod.fetch_responses(br.page, log=self._log)
-        self.events.put((EV_RESPONSES, items))
+        result = responses_mod.fetch_responses(br.page, log=self._log)
+        # Заносим все текущие отклики с hh.ru в память, чтобы бот не открывал
+        # их повторно при поиске.
+        import re
+        added = 0
+        for it in result["items"]:
+            m = re.search(r"/vacancy/(\d+)", it.get("url", ""))
+            if m and not self._storage.is_applied(m.group(1)):
+                self._storage.mark_applied(m.group(1), it["title"], it["company"],
+                                           source="sync")
+                added += 1
+        if added:
+            self._log(f"Добавлено в память откликов: {added} (повторно не откликнемся).")
+        self.events.put((EV_RESPONSES, result))
         self.events.put((EV_DONE, "responses"))
+
+    def _cmd_chat(self, vacancy_id: str) -> None:
+        """Прочитать чат одной вакансии по требованию."""
+        br = self._ensure_browser()
+        if not br.is_logged_in():
+            self._log("Сначала войдите на hh.ru (кнопка «Войти»).")
+            self.events.put((EV_CHAT, {"vacancy_id": vacancy_id, "messages": []}))
+            return
+        msgs = responses_mod.fetch_chat(br.page, vacancy_id, log=self._log)
+        self.events.put((EV_CHAT, {"vacancy_id": vacancy_id, "messages": msgs}))
+        self.events.put((EV_DONE, "chat"))
 
     def _cmd_apply(self, crit: Criteria) -> None:
         self._stop_apply.clear()
-        suitable = self._do_search(crit)
+        # Откликаемся на уже найденные вакансии (после «Найти»); если их нет —
+        # ищем заново.
+        if self._last_suitable:
+            suitable = self._last_suitable
+            self._log(f"Откликаюсь на найденные вакансии: {len(suitable)} шт.")
+        else:
+            self._log("Сначала ищу вакансии…")
+            suitable = self._do_search(crit)
+
         if not suitable:
-            self._log("Нет подходящих вакансий для отклика.")
+            self._log("Нет подходящих вакансий для отклика. Нажмите «Найти».")
             self.events.put((EV_DONE, "apply"))
             return
-        self._log(f"Начинаю отклики ({len(suitable)} вакансий)…")
+
+        letter = crit.cover_letter.strip()
+        self._log(f"Сопроводительное письмо: "
+                  f"{('«' + letter[:40] + '…»') if letter else 'ПУСТО (не задано)'}")
+
         count = applier.run_applications(
             self._ensure_browser().page,
             suitable,
@@ -150,4 +189,5 @@ class Worker(threading.Thread):
             on_update=lambda v: self.events.put((EV_VACANCY, v)),
         )
         self._log(f"Готово. Отправлено откликов: {count}")
+        self._last_suitable = None  # список использован
         self.events.put((EV_DONE, "apply"))

@@ -56,8 +56,30 @@ body {
   text-transform: uppercase;
   letter-spacing: .04em;
 }
-.card-head { display: flex; align-items: center; justify-content: space-between; }
-.card-head .card-title { margin-bottom: 14px; }
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+/* Сворачиваемые разделы */
+.card-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.card-toggle .card-title { margin: 0; }
+.chevron {
+  color: var(--accent);
+  font-size: 13px;
+  display: inline-block;
+  transition: transform .15s ease;
+}
+.card.collapsed .card-body { display: none; }
+.card.collapsed .card-head { margin-bottom: 0; }
+.card.collapsed .chevron { transform: rotate(-90deg); }
 .muted-cell { color: var(--fg-muted); text-align: center; padding: 16px; }
 
 /* Бейджи статусов ответов */
@@ -72,6 +94,48 @@ body {
 .badge.b-red   { background: #3a2030; color: #fda4af; }
 .badge.b-blue  { background: #1e2f4d; color: #93c5fd; }
 .badge.b-gray  { background: #2a2d3e; color: var(--fg-muted); }
+
+/* Полоса с числом непрочитанных сообщений */
+.unread-bar {
+  background: #1e2f4d;
+  color: #93c5fd;
+  border-radius: 8px;
+  padding: 9px 14px;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+/* Маленькая кнопка «Посмотреть ответ» в таблице */
+.btn-sm {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-sm:hover { background: var(--accent-hover); }
+.btn-sm.ghost { background: transparent; color: var(--fg-muted); border: 1px solid var(--border); }
+.btn-sm.ghost:hover { background: var(--border); color: var(--fg); }
+
+/* Панель переписки под строкой ответа */
+.msg-row > td { background: #15161f; padding: 0; }
+.chat-panel { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.msg {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  max-width: 80%;
+}
+.msg-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 3px; }
+.msg-author { font-weight: 600; color: var(--accent); font-size: 13px; }
+.msg-time { color: var(--fg-muted); font-size: 12px; }
+.msg-text { white-space: pre-wrap; }
+.msg-empty { color: var(--fg-muted); }
+.msg-link { color: #93c5fd; text-decoration: none; font-size: 13px; margin-top: 4px; }
+.msg-link:hover { text-decoration: underline; }
 
 /* Форма */
 .form-grid {
@@ -164,6 +228,26 @@ body {
 .vac-table tr.prof5 { background: #3a2533; }
 .vac-table tr.prof6 { background: #2b2742; }
 .vac-table tr.prof7 { background: #2f3320; }
+
+/* Модальное окно подтверждения */
+.modal {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+}
+.modal-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px 24px;
+  width: 420px;
+  max-width: 90vw;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5);
+}
+.modal-title { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
+.modal-text { color: var(--fg-muted); line-height: 1.5; margin-bottom: 20px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 /* Лог */
 .log {
