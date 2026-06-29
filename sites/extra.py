@@ -50,12 +50,26 @@ class RabotaRuAdapter(GenericSiteAdapter):
 
 
 class TrudvsemAdapter(GenericSiteAdapter):
+    """Работа России (trudvsem.ru). Поиск сверен вживую (2026-06-30).
+
+    Поиск публичный (без входа). Отклик требует входа через Госуслуги (ЕСИА) —
+    автоматизировать непрактично, поэтому отклик пока остаётся заглушкой
+    (run_applications из GenericSiteAdapter). Регион пока не фильтруется (поиск по
+    всей РФ) — маппинг города в код _regionIds можно добавить позже.
+    """
     site_id = "trudvsem"
     display_name = "Работа России"
     BASE = "https://trudvsem.ru"
-    SEARCH_URL = "https://trudvsem.ru/vacancies"
-    QUERY_PARAM = "text"
+    SEARCH_URL = "https://trudvsem.ru/vacancy/search"
+    QUERY_PARAM = "_title"
     PAGE_PARAM = "page"
-    PAGE_BASE = 1
+    PAGE_BASE = 0
     LOGIN_URL = "https://trudvsem.ru"
-    ID_RE = r"/vacancy/([\w-]+)"
+    # Сверено: карточка результата, ссылка /vacancy/card/<company>/<uuid>,
+    # заголовок и зарплата — отдельными элементами; компания в карточке списка
+    # обычно отсутствует.
+    CARD = ".search-results-simple-card"
+    TITLE_LINK = "a[href*='/vacancy/card/']"
+    TITLE = ".search-results-simple-card__name"
+    SALARY = ".search-results-simple-card__salary"
+    ID_RE = r"/vacancy/card/[^/]+/([0-9a-f-]+)"

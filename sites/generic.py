@@ -53,7 +53,8 @@ class GenericSiteAdapter(SiteAdapter):
     LOGIN_URL = ""
     LOGGED_IN_MARKER = ""      # CSS-признак, что пользователь вошёл
     CARD = ""                  # селектор карточки вакансии в выдаче
-    TITLE_LINK = ""            # селектор ссылки-заголовка внутри карточки
+    TITLE_LINK = ""            # селектор ссылки вакансии (берётся href)
+    TITLE = ""                 # селектор заголовка (текст); если пусто — берётся из TITLE_LINK
     COMPANY = ""               # селектор компании
     SALARY = ""                # селектор зарплаты (опц.; иначе regex по тексту)
     ID_RE = r"(\d+)"           # как достать id вакансии из URL
@@ -89,13 +90,15 @@ class GenericSiteAdapter(SiteAdapter):
         return m.group(1) if m else url
 
     def _parse_card(self, card, profession: str) -> Vacancy | None:
-        title_el = card.query_selector(self.TITLE_LINK)
-        if title_el is None:
+        link_el = card.query_selector(self.TITLE_LINK)
+        if link_el is None:
             return None
-        url = title_el.get_attribute("href") or ""
+        url = link_el.get_attribute("href") or ""
         if url.startswith("/"):
             url = self.BASE + url
         url = url.split("?")[0]
+        # Текст заголовка: из отдельного селектора TITLE, иначе из самой ссылки.
+        title_el = (card.query_selector(self.TITLE) if self.TITLE else None) or link_el
         company_el = card.query_selector(self.COMPANY) if self.COMPANY else None
         salary_el = card.query_selector(self.SALARY) if self.SALARY else None
         salary_text = _clean((salary_el.inner_text() if salary_el else "")
@@ -120,18 +123,22 @@ class GenericSiteAdapter(SiteAdapter):
                 f"селекторов сайта.")
             return []
         found: list[Vacancy] = []
+        seen: set[str] = set()  # дедуп по url — и защита от «пагинация не работает»
         for page_num in range(max_pages):
             log(f"  [{self.display_name}] страница {page_num + 1}: {query}")
             page.goto(self._build_url(query, page_num), wait_until="domcontentloaded")
             page.wait_for_timeout(1500)
             cards = page.query_selector_all(self.CARD)
             parsed = [v for v in (self._parse_card(c, query) for c in cards) if v]
-            if not parsed:
-                if page_num == 0:
+            fresh = [v for v in parsed if v.url not in seen]
+            if not fresh:
+                if page_num == 0 and not parsed:
                     log(f"[{self.display_name}] карточки не распознаны — проверьте "
                         f"селекторы.")
-                break
-            found.extend(parsed)
+                break  # нет новых вакансий (конец выдачи или пагинация без эффекта)
+            for v in fresh:
+                seen.add(v.url)
+            found.extend(fresh)
         return found
 
     # --- отклик / ответы (заглушки до доводки сайта) ---
