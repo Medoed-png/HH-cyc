@@ -4,7 +4,7 @@
 const $ = (id) => document.getElementById(id);
 
 function api(path, body) {
-  return fetch(path, {
+  return authFetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body || {}),
@@ -39,7 +39,7 @@ function groupDigits(value) {
 
 // ---------- загрузка/сохранение критериев ----------
 async function loadConfig() {
-  const cfg = await (await fetch("/api/config")).json();
+  const cfg = await (await authFetch("/api/config")).json();
   for (const k of ["professions", "region", "salary_min", "exclude_words",
                    "include_words", "resume_name", "cover_letter",
                    "daily_limit", "max_pages"]) {
@@ -115,9 +115,9 @@ function attachAutocomplete(input, fetcher, multi) {
 }
 
 const fetchProfessions = async (t) =>
-  (await fetch("/api/suggest?text=" + encodeURIComponent(t))).json();
+  (await authFetch("/api/suggest?text=" + encodeURIComponent(t))).json();
 const fetchCities = async (t) =>
-  (await fetch("/api/cities?q=" + encodeURIComponent(t))).json();
+  (await authFetch("/api/cities?q=" + encodeURIComponent(t))).json();
 
 // ---------- таблица вакансий ----------
 const rows = new Map();      // id -> <tr>
@@ -289,7 +289,8 @@ function onChatLoaded(vacancyId, messages) {
 
 // ---------- поток событий (SSE) ----------
 function connectEvents() {
-  const es = new EventSource("/api/events");
+  // Токен в query: EventSource не умеет слать заголовок Authorization.
+  const es = new EventSource("/api/events?token=" + encodeURIComponent(getToken()));
   es.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === "log") logLine(msg.text);
@@ -375,6 +376,12 @@ function bindButtons() {
 
 // ---------- старт ----------
 window.addEventListener("DOMContentLoaded", async () => {
+  if (!requireAuth()) return;  // нет токена -> на /login
+  $("btn-logout").onclick = logout;
+  try {
+    const me = await (await authFetch("/auth/me")).json();
+    $("user-email").textContent = me.email || "";
+  } catch (e) { return; }  // 401 -> authFetch уже увёл на /login
   await loadConfig();
   attachAutocomplete($("professions"), fetchProfessions, true);
   attachAutocomplete($("region"), fetchCities, false);

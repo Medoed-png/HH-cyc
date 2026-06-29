@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HH-бот — вход</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <div class="brand auth-brand">✨ HH-бот</div>
+      <div class="auth-tabs">
+        <button id="tab-login" class="auth-tab active">Вход</button>
+        <button id="tab-register" class="auth-tab">Регистрация</button>
+      </div>
+
+      <form id="auth-form" class="auth-form" autocomplete="on">
+        <label>Email</label>
+        <input id="email" type="email" required autocomplete="username" placeholder="you@example.com">
+
+        <label>Пароль</label>
+        <input id="password" type="password" required autocomplete="current-password"
+               placeholder="минимум 6 символов" minlength="6">
+
+        <div id="auth-error" class="auth-error" style="display:none"></div>
+
+        <button id="auth-submit" class="btn accent auth-submit" type="submit">Войти</button>
+      </form>
+
+      <div class="auth-hint" id="auth-hint">Нет аккаунта? Нажмите «Регистрация».</div>
+    </div>
+  </div>
+
+  <script src="/static/auth.js"></script>
+  <script>
+    "use strict";
+    // Если уже авторизован — сразу в приложение.
+    if (getToken()) location.href = "/";
+
+    let mode = "login"; // login | register
+    const $ = (id) => document.getElementById(id);
+    const errBox = $("auth-error");
+
+    function setMode(m) {
+      mode = m;
+      $("tab-login").classList.toggle("active", m === "login");
+      $("tab-register").classList.toggle("active", m === "register");
+      $("auth-submit").textContent = m === "login" ? "Войти" : "Создать аккаунт";
+      $("password").autocomplete = m === "login" ? "current-password" : "new-password";
+      $("auth-hint").textContent = m === "login"
+        ? "Нет аккаунта? Нажмите «Регистрация»."
+        : "Уже есть аккаунт? Нажмите «Вход».";
+      errBox.style.display = "none";
+    }
+
+    $("tab-login").onclick = () => setMode("login");
+    $("tab-register").onclick = () => setMode("register");
+
+    $("auth-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errBox.style.display = "none";
+      const email = $("email").value.trim();
+      const password = $("password").value;
+      const path = mode === "login" ? "/auth/login" : "/auth/register";
+      try {
+        const r = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          errBox.textContent = data.error || "Не удалось войти. Проверьте данные.";
+          errBox.style.display = "block";
+          return;
+        }
+        setToken(data.token);
+        location.href = "/";
+      } catch (err) {
+        errBox.textContent = "Сервер недоступен. Повторите позже.";
+        errBox.style.display = "block";
+      }
+    });
+  </script>
+</body>
+</html>
