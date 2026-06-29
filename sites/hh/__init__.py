@@ -121,40 +121,56 @@ class HHAdapter(SiteAdapter):
             antiban.human_type(page, page.locator(selectors.LOGIN_PHONE_INPUT).first, digits)
         page.wait_for_timeout(500)
 
-        # Шаг 3: переключиться на ввод пароля (появляется после ввода логина).
-        self._click(page, selectors.LOGIN_BY_PASSWORD_LINK)
-        page.wait_for_timeout(1200)
-        if not self._has(page, selectors.LOGIN_PASSWORD_INPUT):
-            # Пароля нет — hh мог пойти по коду; классифицируем текущее состояние.
-            log("Поле пароля не появилось — возможно, hh запросил код.")
-            return self._classify_login_state(page, log)
-        antiban.human_type(page, page.locator(selectors.LOGIN_PASSWORD_INPUT).first, password)
-
-        # Шаг 4: отправить форму входа.
-        self._click(page, selectors.LOGIN_SUBMIT)
+        # Шаг 3: ВХОД ПО ПАРОЛЮ (пароль задан) ИЛИ ПО КОДУ (пароль пуст).
+        if (password or "").strip():
+            # Переключиться на ввод пароля (появляется после ввода логина).
+            self._click(page, selectors.LOGIN_BY_PASSWORD_LINK)
+            page.wait_for_timeout(1200)
+            if not self._has(page, selectors.LOGIN_PASSWORD_INPUT):
+                log("Поле пароля не появилось — возможно, hh запросил код.")
+                return self._classify_login_state(page, log)
+            antiban.human_type(
+                page, page.locator(selectors.LOGIN_PASSWORD_INPUT).first, password
+            )
+            self._click(page, selectors.LOGIN_SUBMIT)  # «Войти»
+        else:
+            # Пароль не задан — запрашиваем код: жмём «Дальше» (hh пришлёт SMS/письмо).
+            log("Пароль не задан — вхожу по коду из SMS/письма.")
+            self._click(page, selectors.LOGIN_SUBMIT)  # «Дальше»
         page.wait_for_timeout(2800)
         return self._classify_login_state(page, log)
 
+    def _code_step_present(self, page: Page) -> bool:
+        """Виден ли шаг ввода кода (pincode-поле или его обёртка)."""
+        return (self._has(page, selectors.LOGIN_CODE_INPUT)
+                or self._has(page, selectors.LOGIN_CODE_WRAPPER))
+
     def submit_sms_code(self, page: Page, code: str,
                         log: Log = lambda m: None) -> LoginResult:
-        """Ввести код подтверждения на странице, оставленной login_with_credentials."""
-        if not self._has(page, selectors.LOGIN_CODE_INPUT):
-            # Может, вход уже завершился (код не понадобился) — проверим.
-            if self._logged_in_now(page):
+        """Ввести код (pincode) на странице, оставленной login_with_credentials.
+
+        Поле кода — magritte-pincode: фокусируем кликом и вводим цифры с клавиатуры;
+        форма отправляется автоматически по вводу всех цифр (submit-кнопки нет).
+        """
+        if not self._code_step_present(page):
+            if self._logged_in_now(page):  # вход мог уже завершиться
                 return LoginResult(LoginStatus.OK)
             return LoginResult(LoginStatus.FAILED, "поле кода не найдено")
+        digits = re.sub(r"\D", "", code)
         try:
-            antiban.human_type(
-                page, page.locator(selectors.LOGIN_CODE_INPUT).first, code
-            )
+            # Фокус: клик по полю кода (или обёртке, если поле визуально скрыто).
+            for sel in (selectors.LOGIN_CODE_INPUT, selectors.LOGIN_CODE_WRAPPER):
+                if self._has(page, sel):
+                    self._click(page, sel, force=True)
+                    break
+            for ch in digits:
+                page.keyboard.type(ch)
+                page.wait_for_timeout(120)
         except Exception:  # noqa: BLE001
             return LoginResult(LoginStatus.FAILED, "не удалось ввести код")
-        # Часть форм отправляет код автоматически; иначе жмём кнопку.
-        try:
-            page.locator(selectors.LOGIN_CODE_SUBMIT).first.click(timeout=4000)
-        except Exception:  # noqa: BLE001
-            pass
-        page.wait_for_timeout(2500)
+        page.wait_for_timeout(3000)  # автоотправка pincode
+        self._click(page, selectors.LOGIN_CODE_SUBMIT)  # no-op, если кнопки нет
+        page.wait_for_timeout(1500)
         return self._classify_login_state(page, log)
 
     def _classify_login_state(self, page: Page, log: Log) -> LoginResult:
@@ -165,7 +181,7 @@ class HHAdapter(SiteAdapter):
         if self._has(page, selectors.CAPTCHA):
             log("hh.ru показал капчу — нужен ручной ввод (кнопка «Показать окно»).")
             return LoginResult(LoginStatus.CAPTCHA_REQUIRED)
-        if self._has(page, selectors.LOGIN_CODE_INPUT):
+        if self._code_step_present(page):
             log("hh.ru запросил код подтверждения (SMS/письмо).")
             return LoginResult(LoginStatus.SMS_REQUIRED)
         if self._has(page, selectors.LOGIN_ERROR):

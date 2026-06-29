@@ -462,8 +462,10 @@ function bindButtons() {
   $("btn-connect").onclick = () => {
     const username = $("hh-username").value.trim();
     const password = $("hh-password").value;
-    if (!username || !password) { logLine("Укажите логин и пароль hh.ru."); return; }
-    logLine("Подключаю аккаунт hh.ru…");
+    if (!username) { logLine("Укажите логин hh.ru (email или телефон)."); return; }
+    // Пароль необязателен: без него — вход по коду из SMS/письма.
+    logLine(password ? "Подключаю аккаунт hh.ru…"
+                     : "Вхожу по коду — сейчас hh.ru пришлёт код…");
     api("/api/connect", { username, password });
   };
   $("btn-send-sms").onclick = () => {

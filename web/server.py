@@ -223,8 +223,10 @@ async def api_connect(request: Request, user: User = Depends(current_user)):
     site = _site(data)
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
-    if not username or not password:
-        return JSONResponse({"error": "Укажите логин и пароль"}, status_code=400)
+    # Пароль необязателен: без него вход идёт по коду из SMS/письма.
+    if not username:
+        return JSONResponse({"error": "Укажите логин (email или телефон)"},
+                            status_code=400)
     creds_mod.store(user.id, site, username, password, status=creds_mod.STATUS_INVALID)
     manager.submit(user.id, site, "connect")
     return {"ok": True}

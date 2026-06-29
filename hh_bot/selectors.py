@@ -33,12 +33,14 @@ LOGIN_BY_PASSWORD_LINK = '[data-qa="expand-login-by-password"]'
 # Поле пароля (появляется после «Войти с паролем»).
 LOGIN_PASSWORD_INPUT = ('input[data-qa="applicant-login-input-password"], '
                         'input[name="password"], input[type="password"]')
-# Поле кода подтверждения (SMS/письмо). ⚠️ Точное имя уточняется при первом входе
-# с реальным аккаунтом; держим по шаблону имён applicant-login-input-* + запасные.
-LOGIN_CODE_INPUT = ('input[data-qa="applicant-login-input-code"], '
-                    'input[data-qa*="otp"], input[data-qa*="code"], '
-                    'input[autocomplete="one-time-code"], input[name="code"]')
-# Кнопка подтверждения кода — та же submit-button на шаге кода.
+# Поле кода подтверждения (SMS/письмо): magritte-pincode (4 цифры, автоотправка
+# при вводе всех цифр — отдельной кнопки на шаге кода нет). Сверено вживую.
+LOGIN_CODE_INPUT = ('input[data-qa="magritte-pincode-input-field"], '
+                    'input[data-qa="applicant-login-input-code"], '
+                    'input[autocomplete="one-time-code"]')
+# Контейнер шага кода (для детекта, что hh запросил код).
+LOGIN_CODE_WRAPPER = '[data-qa="applicant-login-input-otp"]'
+# На шаге кода submit-кнопки нет (автоотправка); оставляем как запасной no-op.
 LOGIN_CODE_SUBMIT = '[data-qa="submit-button"]'
 # Признак ошибки (неверный логин/пароль/код).
 LOGIN_ERROR = '[data-qa="form-helper-error"], [data-qa$="-error"], [data-qa*="error"]'
