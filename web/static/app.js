@@ -366,6 +366,10 @@ function bindButtons() {
     api("/api/responses");
   };
   $("btn-open").onclick = openSelected;
+  $("btn-show-browser").onclick = () => {
+    logLine("Открываю окно браузера…");
+    api("/api/show_browser");
+  };
   $("btn-save").onclick = async () => { await api("/api/save", collectForm()); logLine("Критерии сохранены."); };
 
   $("salary_min").addEventListener("input", (e) => {

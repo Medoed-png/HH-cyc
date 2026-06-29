@@ -9,6 +9,10 @@ Persistent-профиль НЕ сохраняет сессионные cookies (
 их при следующем запуске — тогда вход переживает и авто-закрытие по простою, и
 перезапуск приложения.
 
+По умолчанию браузер работает невидимо (headless) — окно не мешает на экране.
+Управляется переменной окружения HH_HEADLESS: "0"/"false" — показать окно (нужно
+для первого ручного входа на сайт), любое другое значение/отсутствие — скрыть.
+
 Browser — site-agnostic лаунчер вкладки. Специфика входа на конкретный сайт
 (детект логина, страница входа) живёт в адаптере сайта (SiteAdapter), а не здесь.
 """
@@ -24,11 +28,18 @@ from playwright.sync_api import sync_playwright, Page, BrowserContext
 USER_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".browser_profile")
 
 
+def _default_headless() -> bool:
+    """Скрывать окно браузера по умолчанию; HH_HEADLESS=0/false — показать."""
+    val = os.environ.get("HH_HEADLESS", "1").strip().lower()
+    return val not in ("0", "false", "no", "")
+
+
 class Browser:
     """Обёртка над persistent-контекстом Chromium."""
 
-    def __init__(self, headless: bool = False, user_data_dir: str | None = None):
-        self.headless = headless
+    def __init__(self, headless: bool | None = None, user_data_dir: str | None = None):
+        # headless=None — берём из окружения (по умолчанию невидимо).
+        self.headless = _default_headless() if headless is None else headless
         self.user_data_dir = user_data_dir or USER_DATA_DIR
         # Файл с cookies рядом с профилем (включая сессионные — их профиль теряет).
         self._cookies_path = self.user_data_dir.rstrip("/\\") + ".cookies.json"

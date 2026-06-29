@@ -162,6 +162,13 @@ def api_check_login(user: User = Depends(current_user)):
     return {"ok": True}
 
 
+@app.post("/api/show_browser")
+def api_show_browser(user: User = Depends(current_user)):
+    """Показать видимое окно браузера (для капчи/ручных действий)."""
+    manager.submit(user.id, "hh", "show_browser")
+    return {"ok": True}
+
+
 @app.post("/api/search")
 async def api_search(request: Request, user: User = Depends(current_user)):
     crit = config_mod.from_form(await request.json())

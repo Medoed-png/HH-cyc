@@ -71,7 +71,7 @@ class BrowserSession(threading.Thread):
         print(f"[bot u{self.user_id}/{self.site_id}]", msg, flush=True)
         self.events.put((EV_LOG, msg))
 
-    def _ensure_browser(self) -> Browser:
+    def _ensure_browser(self, visible: bool = False) -> Browser:
         # Браузер мог быть закрыт пользователем (закрыл окно) или упасть —
         # тогда пересоздаём, иначе page.goto падает с "target closed".
         if self._browser is not None and not self._browser.is_alive():
@@ -81,8 +81,20 @@ class BrowserSession(threading.Thread):
             except Exception:  # noqa: BLE001
                 pass
             self._browser = None
+        # Для ручного входа нужно видимое окно; если сейчас браузер невидимый —
+        # пересоздаём его с окном. Обычная работа идёт в фоне (headless).
+        if self._browser is not None and visible and self._browser.headless:
+            self._log("Открываю видимое окно браузера для входа…")
+            try:
+                self._browser.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._browser = None
         if self._browser is None:
-            self._browser = Browser(headless=False, user_data_dir=self._profile_dir)
+            # visible -> окно с интерфейсом; иначе режим по умолчанию (невидимый).
+            self._browser = Browser(
+                headless=False if visible else None, user_data_dir=self._profile_dir
+            )
             self._browser.start()
         return self._browser
 
@@ -90,6 +102,20 @@ class BrowserSession(threading.Thread):
         """Сохранить cookies сразу (после подтверждённого входа), не дожидаясь close."""
         if self._browser is not None:
             self._browser._save_cookies()
+
+    def _go_background(self) -> None:
+        """Спрятать окно: если браузер видимый — закрыть его (cookies сохранятся).
+
+        Следующая команда переоткроет браузер уже в фоне (headless) с восстановлением
+        cookies, поэтому вход не теряется, а окно перестаёт мозолить глаза.
+        """
+        if self._browser is not None and not self._browser.headless:
+            self._log("Вход подтверждён — убираю окно браузера в фон.")
+            try:
+                self._browser.close()  # close() сам сохраняет cookies
+            except Exception:  # noqa: BLE001
+                pass
+            self._browser = None
 
     def run(self) -> None:
         while self._running:
@@ -113,21 +139,42 @@ class BrowserSession(threading.Thread):
         self._running = False
 
     def _cmd_login(self) -> None:
+        # Сначала проверяем вход в фоне (без окна). Окно показываем ТОЛЬКО если
+        # действительно нужен ручной ввод логина/пароля/SMS.
         br = self._ensure_browser()
         if self.adapter.is_logged_in(br.page):
+            self._persist_cookies()
+            self._go_background()  # на случай, если окно было видимым
             self._log(f"Вы уже авторизованы на {self.adapter.display_name}.")
             self.events.put((EV_LOGIN, True))
         else:
+            br = self._ensure_browser(visible=True)  # теперь покажем окно входа
             self._log("Открываю страницу входа. Войдите вручную в окне браузера.")
             self.adapter.open_manual_login(br.page)
             self.events.put((EV_LOGIN, False))
         self.events.put((EV_DONE, "login"))
+
+    def _cmd_show_browser(self) -> None:
+        """Показать видимое окно браузера — для капчи/проверки/ручных действий.
+
+        Если сейчас браузер невидимый (фон), пересоздаём его с окном и открываем
+        главную страницу сайта, чтобы окно было осмысленным.
+        """
+        br = self._ensure_browser(visible=True)
+        try:
+            br.page.bring_to_front()
+            br.page.goto(self.adapter.base_url, wait_until="domcontentloaded")
+        except Exception:  # noqa: BLE001 — навигация не критична для показа окна
+            pass
+        self._log("Окно браузера открыто. Можно пройти капчу или действия вручную.")
+        self.events.put((EV_DONE, "show_browser"))
 
     def _cmd_check_login(self) -> None:
         br = self._ensure_browser()
         logged = self.adapter.is_logged_in(br.page)
         if logged:
             self._persist_cookies()  # закрепить вход на диске сразу
+            self._go_background()    # убрать видимое окно входа в фон
         self._log("Авторизация подтверждена." if logged else "Вы ещё не вошли.")
         self.events.put((EV_LOGIN, logged))
         self.events.put((EV_DONE, "check_login"))
