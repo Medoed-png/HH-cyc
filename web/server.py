@@ -26,7 +26,7 @@ from hh_bot.cities_list import CITIES
 from hh_bot.db import User
 from hh_bot.suggest import fetch_suggestions
 from runtime import SessionManager
-from sites import list_sites, get_adapter, DEFAULT_SITE
+from sites import list_sites, get_adapter, DEFAULT_SITE, ALL_SITES, real_site_ids
 from web import auth
 from web.auth import current_user
 
@@ -203,29 +203,48 @@ async def api_save(request: Request, user: User = Depends(current_user)):
     return {"ok": True}
 
 
+def _require_site(site: str):
+    """Вернуть JSONResponse-ошибку, если выбран режим «все сайты» (нужен конкретный)."""
+    if site == ALL_SITES:
+        return JSONResponse({"error": "Выберите конкретный сайт"}, status_code=400)
+    return None
+
+
 @app.post("/api/login")
 async def api_login(request: Request, user: User = Depends(current_user)):
-    manager.submit(user.id, _site(await _body(request)), "login")
+    site = _site(await _body(request))
+    if (err := _require_site(site)):
+        return err
+    manager.submit(user.id, site, "login")
     return {"ok": True}
 
 
 @app.post("/api/check_login")
 async def api_check_login(request: Request, user: User = Depends(current_user)):
-    manager.submit(user.id, _site(await _body(request)), "check_login")
+    site = _site(await _body(request))
+    if site == ALL_SITES:
+        return {"ok": True}  # в режиме «все сайты» единый статус входа не нужен
+    manager.submit(user.id, site, "check_login")
     return {"ok": True}
 
 
 @app.post("/api/show_browser")
 async def api_show_browser(request: Request, user: User = Depends(current_user)):
     """Показать видимое окно браузера (для капчи/ручных действий)."""
-    manager.submit(user.id, _site(await _body(request)), "show_browser")
+    site = _site(await _body(request))
+    if (err := _require_site(site)):
+        return err
+    manager.submit(user.id, site, "show_browser")
     return {"ok": True}
 
 
 @app.post("/api/logout_site")
 async def api_logout_site(request: Request, user: User = Depends(current_user)):
     """Выйти из аккаунта сайта в сессии (сбросить cookies) — для смены аккаунта."""
-    manager.submit(user.id, _site(await _body(request)), "logout_site")
+    site = _site(await _body(request))
+    if (err := _require_site(site)):
+        return err
+    manager.submit(user.id, site, "logout_site")
     return {"ok": True}
 
 
@@ -241,6 +260,8 @@ async def api_connect(request: Request, user: User = Depends(current_user)):
     """Сохранить (зашифровав) логин/пароль и запустить серверный вход."""
     data = await request.json()
     site = _site(data)
+    if (err := _require_site(site)):
+        return err
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
     # Пароль необязателен: без него вход идёт по коду из SMS/письма.
@@ -256,10 +277,13 @@ async def api_connect(request: Request, user: User = Depends(current_user)):
 async def api_sms(request: Request, user: User = Depends(current_user)):
     """Передать код подтверждения (SMS/письмо) для завершения входа."""
     data = await request.json()
+    site = _site(data)
+    if (err := _require_site(site)):
+        return err
     code = str(data.get("code", "")).strip()
     if not code:
         return JSONResponse({"error": "Введите код"}, status_code=400)
-    manager.submit(user.id, _site(data), "submit_sms", code=code)
+    manager.submit(user.id, site, "submit_sms", code=code)
     return {"ok": True}
 
 
@@ -303,11 +327,17 @@ async def api_set_telegram(request: Request, user: User = Depends(current_user))
     return {"ok": True, "test_sent": sent}
 
 
+def _targets(site: str) -> list[str]:
+    """Сайты-получатели команды: один сайт или все реальные при site='all'."""
+    return real_site_ids() if site == ALL_SITES else [site]
+
+
 @app.post("/api/search")
 async def api_search(request: Request, user: User = Depends(current_user)):
     data = await request.json()
     crit = config_mod.from_form(data)
-    manager.submit(user.id, _site(data), "search", crit=crit)
+    for sid in _targets(_site(data)):  # 'all' -> веер по всем сайтам
+        manager.submit(user.id, sid, "search", crit=crit)
     return {"ok": True}
 
 
@@ -315,7 +345,8 @@ async def api_search(request: Request, user: User = Depends(current_user)):
 async def api_apply(request: Request, user: User = Depends(current_user)):
     data = await request.json()
     crit = config_mod.from_form(data)
-    manager.submit(user.id, _site(data), "apply", crit=crit)
+    for sid in _targets(_site(data)):
+        manager.submit(user.id, sid, "apply", crit=crit)
     return {"ok": True}
 
 
@@ -327,7 +358,8 @@ async def api_stop(request: Request, user: User = Depends(current_user)):
 
 @app.post("/api/responses")
 async def api_responses(request: Request, user: User = Depends(current_user)):
-    manager.submit(user.id, _site(await _body(request)), "responses")
+    for sid in _targets(_site(await _body(request))):
+        manager.submit(user.id, sid, "responses")
     return {"ok": True}
 
 

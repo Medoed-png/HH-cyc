@@ -3,8 +3,10 @@
 // ---------- утилиты ----------
 const $ = (id) => document.getElementById(id);
 
-// Выбранный сайт поиска работы (hh / superjob / …). Прокидывается во все запросы.
+// Выбранный сайт поиска работы (hh / superjob / all / …). Прокидывается в запросы.
 let currentSite = localStorage.getItem("hh_site") || "hh";
+const ALL_SITES = "all";
+const SITE_NAMES = {};  // id сайта -> отображаемое имя (из /api/sites)
 
 function api(path, body) {
   // Сайт добавляем в тело каждого POST, чтобы бэкенд знал, к какой сессии слать.
@@ -177,26 +179,28 @@ function clearTable() {
 }
 
 function upsertVacancy(v) {
-  let tr = rows.get(v.id);
+  const key = (v.site || "") + ":" + v.id;  // id вакансий могут совпадать между сайтами
+  let tr = rows.get(key);
   if (!tr) {
     tr = document.createElement("tr");
     tr.dataset.url = v.url;
     tr.dataset.index = order++;
-    tr.innerHTML = "<td></td><td></td><td></td><td></td><td></td>";
+    tr.innerHTML = "<td></td><td></td><td></td><td></td><td></td><td></td>";
     tr.addEventListener("click", () => {
       document.querySelectorAll(".vac-table tr.selected").forEach(r => r.classList.remove("selected"));
       tr.classList.add("selected");
     });
     tr.addEventListener("dblclick", () => window.open(v.url, "_blank"));
     $("vac-body").appendChild(tr);
-    rows.set(v.id, tr);
+    rows.set(key, tr);
   }
   const cells = tr.children;
-  cells[0].textContent = v.title;
-  cells[1].textContent = v.company;
-  cells[2].textContent = v.salary;
-  cells[3].textContent = v.status;
-  cells[4].textContent = v.note;
+  cells[0].textContent = SITE_NAMES[v.site] || v.site || "";
+  cells[1].textContent = v.title;
+  cells[2].textContent = v.company;
+  cells[3].textContent = v.salary;
+  cells[4].textContent = v.status;
+  cells[5].textContent = v.note;
   tr.className = rowClass(v, parseInt(tr.dataset.index, 10));
   if (tr.dataset.selected) tr.classList.add("selected");
 }
@@ -352,6 +356,7 @@ async function loadSites() {
   const sel = $("site-select");
   sel.innerHTML = "";
   for (const s of sites) {
+    SITE_NAMES[s.id] = s.display_name;
     const o = document.createElement("option");
     o.value = s.id; o.textContent = s.display_name;
     sel.appendChild(o);
@@ -362,10 +367,11 @@ async function loadSites() {
     currentSite = sel.value;
     localStorage.setItem("hh_site", currentSite);
     clearTable();
+    setStatus(false);          // мгновенно поправить шапку/панель под новый режим
     loadConfig();
     loadConnStatus();
     loadStats();
-    api("/api/check_login").catch(() => {});  // обновит статус входа для нового сайта
+    if (currentSite !== ALL_SITES) api("/api/check_login").catch(() => {});
   };
 }
 
@@ -424,8 +430,9 @@ function connectEvents() {
   const es = new EventSource("/api/events?token=" + encodeURIComponent(getToken()));
   es.onmessage = (e) => {
     const msg = JSON.parse(e.data);
-    // События приходят от всех сессий пользователя; показываем только выбранный сайт.
-    if (msg.site && msg.site !== currentSite) return;
+    // События приходят от всех сессий пользователя; в режиме «все сайты» показываем
+    // все, иначе только выбранный сайт.
+    if (currentSite !== ALL_SITES && msg.site && msg.site !== currentSite) return;
     if (msg.type === "log") logLine(msg.text);
     else if (msg.type === "login") setStatus(msg.logged_in);
     else if (msg.type === "vacancy") {
@@ -441,6 +448,15 @@ function connectEvents() {
 
 function setStatus(loggedIn) {
   const el = $("status");
+  // Режим «все сайты»: единый статус входа неприменим — нейтральный вид,
+  // подключение/переподключение скрыты (вход настраивается на конкретном сайте).
+  if (currentSite === ALL_SITES) {
+    el.className = "status muted";
+    el.textContent = "🌐 поиск по всем сайтам";
+    if ($("connect-card")) $("connect-card").style.display = "none";
+    if ($("btn-reconnect")) $("btn-reconnect").style.display = "none";
+    return;
+  }
   el.className = "status " + (loggedIn ? "ok" : "bad");
   el.textContent = loggedIn ? "● вы вошли" : "● не авторизованы";
   // Карточка подключения нужна только когда пользователь НЕ вошёл. Если он уже
@@ -592,6 +608,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     $("user-email").textContent = me.email || "";
   } catch (e) { return; }  // 401 -> authFetch уже увёл на /login
   await loadSites();
+  setStatus(false);  // применить режим (нейтральный для «все сайты»)
   await loadConfig();
   attachAutocomplete($("professions"), fetchProfessions, true);
   attachAutocomplete($("region"), fetchCities, false);
@@ -603,7 +620,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   loadProxy();                               // статус прокси пользователя
   loadTelegram();                            // статус Telegram-уведомлений
   loadStats();                               // дашборд статистики
-  api("/api/check_login").catch(() => {});  // обновит бейдж статуса входа
+  if (currentSite !== ALL_SITES) api("/api/check_login").catch(() => {});
   bindAutoLogin();
 });
 
@@ -614,6 +631,7 @@ function bindAutoLogin() {
   let lastCheck = 0;
   const recheck = () => {
     if (document.visibilityState !== "visible") return;
+    if (currentSite === ALL_SITES) return;  // в режиме «все» единый статус не нужен
     if (Date.now() - lastCheck < 5000) return;
     lastCheck = Date.now();
     api("/api/check_login").catch(() => {});
