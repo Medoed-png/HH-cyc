@@ -62,6 +62,13 @@ class Browser:
         except Exception:  # noqa: BLE001 — битый файл не должен ломать запуск
             pass
 
+    def is_alive(self) -> bool:
+        """Жив ли браузер: есть вкладка и она не закрыта (юзер мог закрыть окно)."""
+        try:
+            return self.page is not None and not self.page.is_closed()
+        except Exception:  # noqa: BLE001 — контекст/браузер уже мёртв
+            return False
+
     def _save_cookies(self) -> None:
         """Выгрузить все cookies контекста в файл (вызывать ДО close)."""
         if self.context is None:

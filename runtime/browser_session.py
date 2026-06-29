@@ -72,6 +72,15 @@ class BrowserSession(threading.Thread):
         self.events.put((EV_LOG, msg))
 
     def _ensure_browser(self) -> Browser:
+        # Браузер мог быть закрыт пользователем (закрыл окно) или упасть —
+        # тогда пересоздаём, иначе page.goto падает с "target closed".
+        if self._browser is not None and not self._browser.is_alive():
+            self._log("Окно браузера было закрыто — открываю заново.")
+            try:
+                self._browser.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._browser = None
         if self._browser is None:
             self._browser = Browser(headless=False, user_data_dir=self._profile_dir)
             self._browser.start()
