@@ -390,4 +390,20 @@ window.addEventListener("DOMContentLoaded", async () => {
   bindCollapsibles();
   connectEvents();
   api("/api/check_login").catch(() => {});  // обновит бейдж статуса входа
+  bindAutoLogin();
 });
+
+// Авто-переоткрытие окна hh.ru без кнопки «Войти»: когда пользователь
+// возвращается во вкладку приложения, проверяем вход (и при необходимости
+// заново открываем закрытое окно браузера). Дебаунс, чтобы не частить.
+function bindAutoLogin() {
+  let lastCheck = 0;
+  const recheck = () => {
+    if (document.visibilityState !== "visible") return;
+    if (Date.now() - lastCheck < 5000) return;
+    lastCheck = Date.now();
+    api("/api/check_login").catch(() => {});
+  };
+  document.addEventListener("visibilitychange", recheck);
+  window.addEventListener("focus", recheck);
+}
