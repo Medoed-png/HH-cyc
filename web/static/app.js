@@ -389,4 +389,5 @@ window.addEventListener("DOMContentLoaded", async () => {
   bindModal();
   bindCollapsibles();
   connectEvents();
+  api("/api/check_login").catch(() => {});  // обновит бейдж статуса входа
 });

@@ -22,7 +22,7 @@ from hh_bot import config as config_mod
 from hh_bot.cities_list import CITIES
 from hh_bot.db import User
 from hh_bot.suggest import fetch_suggestions
-from hh_bot.worker import (Worker, EV_LOG, EV_LOGIN, EV_VACANCY, EV_RESPONSES, EV_CHAT)
+from runtime import SessionManager
 from web import auth
 from web.auth import current_user
 
@@ -37,37 +37,37 @@ _MAJOR_CITIES = {
 
 app = FastAPI(title="HH-бот")
 
-# Один рабочий поток на всё приложение (владеет браузером Playwright).
-# Несколько пользователей и пул сессий появятся в M4.
-worker = Worker()
-worker.start()
-
-# Очередь для SSE: события воркера дублируем сюда уже в JSON-виде.
-_sse_queue: queue.Queue = queue.Queue()
+# --- per-user SSE: реестр подписчиков по user_id ---
+# Каждое открытое соединение /api/events регистрирует свою очередь; события
+# сессии пользователя рассылаются только в его очереди (изоляция между людьми).
+_subscribers: dict[int, set[queue.Queue]] = {}
+_subs_lock = threading.Lock()
 
 
-def _pump_events() -> None:
-    """Перекладывать события воркера в SSE-очередь в виде JSON-сообщений."""
-    while True:
-        kind, payload = worker.events.get()
-        if kind == EV_LOG:
-            msg = {"type": "log", "text": payload}
-        elif kind == EV_LOGIN:
-            msg = {"type": "login", "logged_in": bool(payload)}
-        elif kind == EV_VACANCY:
-            msg = {"type": "vacancy", "vacancy": payload.to_dict()}
-        elif kind == EV_RESPONSES:
-            msg = {"type": "responses",
-                   "items": payload["items"], "unread": payload["unread"]}
-        elif kind == EV_CHAT:
-            msg = {"type": "chat",
-                   "vacancy_id": payload["vacancy_id"], "messages": payload["messages"]}
-        else:
-            continue
-        _sse_queue.put(msg)
+def _add_subscriber(user_id: int, q: queue.Queue) -> None:
+    with _subs_lock:
+        _subscribers.setdefault(user_id, set()).add(q)
 
 
-threading.Thread(target=_pump_events, daemon=True).start()
+def _remove_subscriber(user_id: int, q: queue.Queue) -> None:
+    with _subs_lock:
+        subs = _subscribers.get(user_id)
+        if subs:
+            subs.discard(q)
+            if not subs:
+                _subscribers.pop(user_id, None)
+
+
+def _publish(user_id: int, msg: dict) -> None:
+    """Разослать событие во все SSE-очереди этого пользователя."""
+    with _subs_lock:
+        targets = list(_subscribers.get(user_id, ()))
+    for q in targets:
+        q.put(msg)
+
+
+# Пул per-user сессий браузера (владеет Playwright; события -> _publish).
+manager = SessionManager(_publish)
 
 
 # ---------- статика ----------
@@ -143,40 +143,46 @@ async def api_save(request: Request, user: User = Depends(current_user)):
 
 @app.post("/api/login")
 def api_login(user: User = Depends(current_user)):
-    worker.submit("login")
+    manager.submit(user.id, "hh", "login")
+    return {"ok": True}
+
+
+@app.post("/api/check_login")
+def api_check_login(user: User = Depends(current_user)):
+    manager.submit(user.id, "hh", "check_login")
     return {"ok": True}
 
 
 @app.post("/api/search")
 async def api_search(request: Request, user: User = Depends(current_user)):
     crit = config_mod.from_form(await request.json())
-    worker.submit("search", crit=crit)
+    manager.submit(user.id, "hh", "search", crit=crit)
     return {"ok": True}
 
 
 @app.post("/api/apply")
 async def api_apply(request: Request, user: User = Depends(current_user)):
     crit = config_mod.from_form(await request.json())
-    worker.submit("apply", crit=crit)
+    manager.submit(user.id, "hh", "apply", crit=crit)
     return {"ok": True}
 
 
 @app.post("/api/stop")
 def api_stop(user: User = Depends(current_user)):
-    worker.request_stop_apply()
+    manager.request_stop_apply(user.id, "hh")
     return {"ok": True}
 
 
 @app.post("/api/responses")
 def api_responses(user: User = Depends(current_user)):
-    worker.submit("responses")
+    manager.submit(user.id, "hh", "responses")
     return {"ok": True}
 
 
 @app.post("/api/chat")
 async def api_chat(request: Request, user: User = Depends(current_user)):
     vacancy_id = str((await request.json()).get("vacancy_id", ""))
-    worker.submit("chat", vacancy_id=vacancy_id)
+    manager.submit(user.id, "hh", "chat", vacancy_id=vacancy_id)
     return {"ok": True}
 
 
@@ -204,26 +210,32 @@ def api_cities(q: str = "", user: User = Depends(current_user)):
 
 @app.get("/api/events")
 def api_events(user: User = Depends(current_user)):
-    """Поток событий (Server-Sent Events) для обновлений в реальном времени.
+    """Поток событий (SSE) ТОЛЬКО для текущего пользователя.
 
     Токен приходит в query (?token=), т.к. EventSource не умеет заголовки.
-    Синхронный генератор: Starlette крутит его в пуле потоков, поэтому блокирующее
-    ожидание очереди не мешает остальным запросам.
+    Регистрируем личную очередь подписчика; события чужих сессий сюда не попадут.
+    Синхронный генератор Starlette крутит в пуле потоков.
     """
+    q: queue.Queue = queue.Queue()
+    _add_subscriber(user.id, q)
+
     def stream():
-        while True:
-            try:
-                msg = _sse_queue.get(timeout=15)
-                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-            except queue.Empty:
-                yield ": keep-alive\n\n"  # heartbeat, чтобы соединение не падало
+        try:
+            while True:
+                try:
+                    msg = q.get(timeout=15)
+                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                except queue.Empty:
+                    yield ": keep-alive\n\n"  # heartbeat, чтобы соединение не падало
+        finally:
+            _remove_subscriber(user.id, q)
+
     return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 def main() -> None:
     url = "http://127.0.0.1:8000"
     print(f"HH-бот: откройте {url}")
-    worker.submit("check_login")  # проверить вход при старте
     threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")
 

@@ -1,20 +1,25 @@
-"""Рабочий поток: владеет браузером (Playwright sync) и выполняет команды GUI.
+"""Сессия браузера одного пользователя на одном сайте.
 
-Playwright sync-API нельзя дёргать из разных потоков, поэтому весь браузер живёт
-в одном выделенном потоке. GUI общается с ним через очереди команд и событий.
+Обобщение прежнего Worker: владеет своим Playwright-браузером (persistent-профиль
+profiles/{user_id}/{site_id}/), своим хранилищем истории (Storage с тем же
+скоупом) и адаптером сайта. Playwright sync-API нельзя дёргать из разных потоков,
+поэтому каждая сессия живёт в своём выделенном потоке; общение — через очереди
+команд и событий. Пулом сессий управляет SessionManager.
 """
 from __future__ import annotations
 
+import os
 import queue
 import threading
+import time
 
-from .browser import Browser
-from .config import Criteria
-from . import filters
-from .storage import Storage
-from sites import get_adapter, DEFAULT_SITE
+from hh_bot.browser import Browser
+from hh_bot.config import Criteria
+from hh_bot import filters
+from hh_bot.storage import Storage
+from sites import get_adapter
 
-# Типы событий, отправляемых в GUI.
+# Типы событий, отправляемых в UI (через SessionManager -> per-user SSE).
 EV_LOG = "log"              # payload: str
 EV_LOGIN = "login"          # payload: bool (залогинен ли)
 EV_VACANCY = "vacancy"      # payload: Vacancy (новая/обновлённая)
@@ -22,25 +27,31 @@ EV_RESPONSES = "responses"  # payload: dict {items, unread}
 EV_CHAT = "chat"            # payload: dict {vacancy_id, messages}
 EV_DONE = "done"            # payload: str (что завершилось)
 
+# Корень для пользовательских профилей браузера.
+_PROFILES_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "profiles")
 
-class Worker(threading.Thread):
-    """Поток-исполнитель команд браузера."""
 
-    def __init__(self, site_id: str = DEFAULT_SITE):
+class BrowserSession(threading.Thread):
+    """Поток-исполнитель команд браузера для пары (user_id, site_id)."""
+
+    def __init__(self, user_id: int, site_id: str = "hh"):
         super().__init__(daemon=True)
+        self.user_id = user_id
+        self.site_id = site_id
         self.commands: queue.Queue = queue.Queue()
         self.events: queue.Queue = queue.Queue()
         self._stop_apply = threading.Event()
         self._browser: Browser | None = None
         self._running = True
         self._last_suitable: list | None = None  # найденные вакансии для откликов
-        # Адаптер сайта: вся специфика hh.ru/других сайтов — за ним.
         self.adapter = get_adapter(site_id)
-        # История откликов в рамках (user_id, site_id). user_id=0 до M3 (вход).
-        self._storage = Storage(user_id=0, site_id=self.adapter.site_id)
+        self._storage = Storage(user_id=user_id, site_id=self.adapter.site_id)
+        self._profile_dir = os.path.join(_PROFILES_ROOT, str(user_id), self.adapter.site_id)
+        self.last_activity = time.monotonic()
 
-    # --- API для GUI (потокобезопасно через очередь) ---
+    # --- API для сервера (потокобезопасно через очередь) ---
     def submit(self, name: str, **kwargs) -> None:
+        self.touch()
         self.commands.put((name, kwargs))
 
     def request_stop_apply(self) -> None:
@@ -49,14 +60,20 @@ class Worker(threading.Thread):
     def shutdown(self) -> None:
         self.commands.put(("quit", {}))
 
+    def touch(self) -> None:
+        self.last_activity = time.monotonic()
+
+    def idle_seconds(self) -> float:
+        return time.monotonic() - self.last_activity
+
     # --- внутреннее ---
     def _log(self, msg: str) -> None:
-        print("[bot]", msg, flush=True)  # дублируем в консоль сервера для отладки
+        print(f"[bot u{self.user_id}/{self.site_id}]", msg, flush=True)
         self.events.put((EV_LOG, msg))
 
     def _ensure_browser(self) -> Browser:
         if self._browser is None:
-            self._browser = Browser(headless=False)
+            self._browser = Browser(headless=False, user_data_dir=self._profile_dir)
             self._browser.start()
         return self._browser
 
@@ -115,7 +132,6 @@ class Worker(threading.Thread):
         self._log(f"Всего найдено: {len(all_found)}")
         suitable = filters.filter_all(all_found, crit, self._storage)
         self._log(f"Подходящих по критериям: {len(suitable)}")
-        # В таблицу выводим только подходящие вакансии.
         for v in suitable:
             self.events.put((EV_VACANCY, v))
         self._last_suitable = suitable  # запоминаем для откликов
@@ -134,8 +150,7 @@ class Worker(threading.Thread):
             return
         self._log("Загружаю ответы на отклики…")
         result = self.adapter.fetch_responses(br.page, log=self._log)
-        # Заносим все текущие отклики с hh.ru в память, чтобы бот не открывал
-        # их повторно при поиске.
+        # Заносим все текущие отклики с сайта в память, чтобы не открывать повторно.
         import re
         added = 0
         for it in result["items"]:
@@ -162,8 +177,6 @@ class Worker(threading.Thread):
 
     def _cmd_apply(self, crit: Criteria) -> None:
         self._stop_apply.clear()
-        # Откликаемся на уже найденные вакансии (после «Найти»); если их нет —
-        # ищем заново.
         if self._last_suitable:
             suitable = self._last_suitable
             self._log(f"Откликаюсь на найденные вакансии: {len(suitable)} шт.")
