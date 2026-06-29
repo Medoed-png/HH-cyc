@@ -76,9 +76,13 @@ class BrowserSession(threading.Thread):
         self.events.put((EV_LOG, msg))
 
     def _proxy_url(self) -> str | None:
-        """Прокси для этой сессии. Пока глобальный из env HH_PROXY_URL; per-user
-        хранилище (users.proxy_url_enc) + UI и реальный пул — на этапе облака (M8)."""
-        return os.environ.get("HH_PROXY_URL", "").strip() or None
+        """Прокси для этой сессии: персональный из БД (users.proxy_url_enc),
+        иначе глобальный из env HH_PROXY_URL. Реальный пул прокси — в облаке (M8)."""
+        try:
+            personal = credentials.get_proxy(self.user_id)
+        except Exception:  # noqa: BLE001 — БД недоступна не должна ронять запуск
+            personal = ""
+        return personal or os.environ.get("HH_PROXY_URL", "").strip() or None
 
     def _ensure_browser(self, visible: bool = False) -> Browser:
         # Браузер мог быть закрыт пользователем (закрыл окно) или упасть —

@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 
 from .crypto import encrypt, decrypt
-from .db import SessionLocal, SiteCredential
+from .db import SessionLocal, SiteCredential, User
 
 # Допустимые значения status (для валидации/документации).
 STATUS_CONNECTED = "connected"
@@ -113,6 +113,44 @@ def status(user_id: int, site_id: str) -> dict:
             "username": decrypt(row.username_enc),
             "last_login_at": row.last_login_at.isoformat() if row.last_login_at else None,
         }
+
+
+# --- прокси пользователя (per-user, не per-site; для анти-бана) ---
+
+def _mask_proxy(url: str) -> str:
+    """Скрыть логин/пароль в строке прокси для показа в UI."""
+    if not url:
+        return ""
+    if "@" in url:
+        scheme, _, rest = url.partition("://")
+        host = rest.split("@", 1)[1] if "@" in rest else rest
+        return (scheme + "://" if _ else "") + "***@" + host
+    return url
+
+
+def set_proxy(user_id: int, proxy_url: str) -> None:
+    """Сохранить (зашифровав) прокси пользователя. Пустая строка — очистить."""
+    with SessionLocal() as s:
+        user = s.get(User, user_id)
+        if user is None:
+            return
+        user.proxy_url_enc = encrypt((proxy_url or "").strip())
+        s.commit()
+
+
+def get_proxy(user_id: int) -> str:
+    """Расшифрованный прокси пользователя (или '' — использовать в воркере)."""
+    with SessionLocal() as s:
+        user = s.get(User, user_id)
+        if user is None:
+            return ""
+        return decrypt(user.proxy_url_enc or "")
+
+
+def proxy_status(user_id: int) -> dict:
+    """Для UI: задан ли прокси и его замаскированный вид (без логина/пароля)."""
+    url = get_proxy(user_id)
+    return {"set": bool(url), "proxy_url": _mask_proxy(url)}
 
 
 def delete(user_id: int, site_id: str) -> None:

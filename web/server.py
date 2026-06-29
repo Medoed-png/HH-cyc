@@ -241,6 +241,21 @@ async def api_disconnect(request: Request, user: User = Depends(current_user)):
     return {"ok": True}
 
 
+# ---------- прокси пользователя (per-user, анти-бан) ----------
+@app.get("/api/proxy")
+def api_proxy_status(user: User = Depends(current_user)):
+    """Задан ли прокси (без логина/пароля)."""
+    return creds_mod.proxy_status(user.id)
+
+
+@app.post("/api/proxy")
+async def api_set_proxy(request: Request, user: User = Depends(current_user)):
+    """Сохранить (или очистить пустой строкой) прокси пользователя."""
+    proxy_url = str((await request.json()).get("proxy_url", "")).strip()
+    creds_mod.set_proxy(user.id, proxy_url)
+    return {"ok": True}
+
+
 @app.post("/api/search")
 async def api_search(request: Request, user: User = Depends(current_user)):
     data = await request.json()

@@ -1,0 +1,37 @@
+# Локальный/прод-подобный запуск: приложение + Postgres.
+# Секреты задайте в .env (см. .env.example). Профили браузеров и БД — на томах.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hh}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hh}
+      POSTGRES_DB: ${POSTGRES_DB:-hh}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hh}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # SQLAlchemy + psycopg3: схема URL postgresql+psycopg://
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hh}:${POSTGRES_PASSWORD:-hh}@db:5432/${POSTGRES_DB:-hh}
+      APP_JWT_SECRET: ${APP_JWT_SECRET:?задайте APP_JWT_SECRET в .env}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?задайте APP_ENCRYPTION_KEY в .env}
+      HH_HEADLESS: "1"
+      WEB_CONCURRENCY: "1"   # см. предупреждение в gunicorn_conf.py
+    ports:
+      - "8000:8000"
+    volumes:
+      - profiles:/app/profiles   # персистентные профили браузера (вход/cookies)
+
+volumes:
+  pgdata:
+  profiles:

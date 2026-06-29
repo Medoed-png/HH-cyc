@@ -344,6 +344,22 @@ async function loadSites() {
   };
 }
 
+// ---------- прокси (per-user) ----------
+async function loadProxy() {
+  try {
+    const st = await (await authFetch("/api/proxy")).json();
+    const badge = $("proxy-badge");
+    if (st.set) {
+      badge.className = "badge b-green";
+      badge.textContent = "задан";
+      $("proxy-url").placeholder = st.proxy_url || "прокси задан";
+    } else {
+      badge.className = "badge b-gray";
+      badge.textContent = "не задан";
+    }
+  } catch (e) { /* не критично */ }
+}
+
 // ---------- поток событий (SSE) ----------
 function connectEvents() {
   // Токен в query: EventSource не умеет слать заголовок Authorization.
@@ -455,6 +471,18 @@ function bindButtons() {
     logLine("Аккаунт hh.ru отключён.");
     loadConnStatus();
   };
+  $("btn-save-proxy").onclick = async () => {
+    await api("/api/proxy", { proxy_url: $("proxy-url").value.trim() });
+    $("proxy-url").value = "";
+    logLine("Прокси сохранён (применится при следующем запуске браузера).");
+    loadProxy();
+  };
+  $("btn-clear-proxy").onclick = async () => {
+    await api("/api/proxy", { proxy_url: "" });
+    $("proxy-url").value = "";
+    logLine("Прокси очищен.");
+    loadProxy();
+  };
   $("btn-save").onclick = async () => { await api("/api/save", collectForm()); logLine("Критерии сохранены."); };
 
   $("salary_min").addEventListener("input", (e) => {
@@ -480,6 +508,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   bindCollapsibles();
   connectEvents();
   loadConnStatus();                          // статус подключения аккаунта hh.ru
+  loadProxy();                               // статус прокси пользователя
   api("/api/check_login").catch(() => {});  // обновит бейдж статуса входа
   bindAutoLogin();
 });

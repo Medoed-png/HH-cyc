@@ -50,6 +50,28 @@
       </div>
     </section>
 
+    <!-- Прокси (анти-бан, per-user) -->
+    <section class="card collapsed" id="proxy-card">
+      <div class="card-head">
+        <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Прокси (анти-бан)</h2></div>
+        <span id="proxy-badge" class="badge b-gray">не задан</span>
+      </div>
+      <div class="card-body">
+      <div class="form-grid">
+        <label>Адрес прокси</label>
+        <div class="field"><input id="proxy-url" type="text" autocomplete="off" placeholder="http://user:pass@host:port"></div>
+      </div>
+      <div class="toolbar">
+        <button id="btn-save-proxy" class="btn accent">Сохранить прокси</button>
+        <button id="btn-clear-proxy" class="btn">Очистить</button>
+      </div>
+      <div class="muted" style="margin-top:8px;font-size:12px">
+        Свой IP на пользователя снижает риск бана. Хранится зашифрованно.
+        Применяется при следующем запуске браузера сессии.
+      </div>
+      </div>
+    </section>
+
     <!-- Критерии -->
     <section class="card">
       <div class="card-head">
