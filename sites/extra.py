@@ -26,14 +26,24 @@ class AvitoAdapter(GenericSiteAdapter):
 
 
 class HabrCareerAdapter(GenericSiteAdapter):
+    """Habr Career (career.habr.com). Поиск сверен вживую (2026-06-30).
+
+    Поиск публичный. Отклик требует входа и анкеты — отдельная доводка (пока
+    run_applications из GenericSiteAdapter = заглушка). Регион пока не фильтруется.
+    """
     site_id = "habr"
     display_name = "Habr Career"
     BASE = "https://career.habr.com"
-    SEARCH_URL = "https://career.habr.com/vacancies"
+    # type=all — все вакансии (не только подходящие под профиль); q — запрос.
+    SEARCH_URL = "https://career.habr.com/vacancies?type=all"
     QUERY_PARAM = "q"
     PAGE_PARAM = "page"
     PAGE_BASE = 1
     LOGIN_URL = "https://career.habr.com/users/sign_in"
+    CARD = ".vacancy-card"
+    TITLE_LINK = ".vacancy-card__title-link"
+    COMPANY = ".vacancy-card__company"
+    SALARY = ".vacancy-card__salary"
     ID_RE = r"/vacancies/(\d+)"
 
 
