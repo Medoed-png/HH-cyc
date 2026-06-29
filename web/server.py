@@ -118,8 +118,8 @@ def auth_me(user: User = Depends(current_user)):
 # ---------- API (требуют входа) ----------
 @app.get("/api/config")
 def api_config(user: User = Depends(current_user)):
-    """Текущие критерии для заполнения формы."""
-    crit = config_mod.load()
+    """Текущие критерии пользователя для заполнения формы."""
+    crit = config_mod.load_for(user.id, "hh")
     region_name = {v: k for k, v in CITIES.items()}.get(str(crit.region), "Россия")
     return {
         "professions": ", ".join(crit.profession_texts),
@@ -137,7 +137,7 @@ def api_config(user: User = Depends(current_user)):
 @app.post("/api/save")
 async def api_save(request: Request, user: User = Depends(current_user)):
     crit = config_mod.from_form(await request.json())
-    config_mod.save(crit)
+    config_mod.save_for(user.id, crit, "hh")
     return {"ok": True}
 
 

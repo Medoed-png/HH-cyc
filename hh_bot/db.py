@@ -15,7 +15,7 @@ import os
 import datetime
 
 from sqlalchemy import (
-    String, Integer, DateTime, UniqueConstraint, Index, create_engine,
+    JSON, String, Integer, DateTime, UniqueConstraint, Index, create_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -48,6 +48,24 @@ class User(Base):
         DateTime, default=datetime.datetime.now
     )
     status: Mapped[str] = mapped_column(String(16), default="active")
+
+
+class SiteConfig(Base):
+    """Критерии поиска одного пользователя для одного сайта (замена config.yaml)."""
+
+    __tablename__ = "site_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    site_id: Mapped[str] = mapped_column(String(32), default="hh")
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "site_id", name="uq_siteconfig_user_site"),
+    )
 
 
 class AppliedHistory(Base):

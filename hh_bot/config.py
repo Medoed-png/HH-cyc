@@ -1,7 +1,12 @@
-"""Загрузка и сохранение конфигурации критериев."""
+"""Загрузка и сохранение конфигурации критериев.
+
+Глобальный config.yaml остаётся источником стартовых значений по умолчанию;
+рабочие критерии хранятся per-user в таблице site_configs (load_for/save_for).
+"""
 from __future__ import annotations
 
 import os
+import datetime
 from dataclasses import dataclass, field, asdict
 
 import yaml
@@ -62,6 +67,53 @@ def save(crit: Criteria, path: str = CONFIG_PATH) -> None:
         yaml.safe_dump(
             asdict(crit), f, allow_unicode=True, sort_keys=False, default_flow_style=False
         )
+
+
+def load_for(user_id: int, site_id: str = "hh") -> Criteria:
+    """Критерии конкретного пользователя для сайта.
+
+    Если своих сохранённых критериев ещё нет — отдаём значения из config.yaml как
+    стартовые (плавный переход с одиночного конфига на per-user).
+    """
+    from sqlalchemy import select
+    from .db import SessionLocal, SiteConfig
+
+    with SessionLocal() as s:
+        row = s.execute(
+            select(SiteConfig).where(
+                SiteConfig.user_id == user_id, SiteConfig.site_id == site_id
+            )
+        ).scalar_one_or_none()
+        data = row.data if row else None
+
+    if not data:
+        return load()  # фолбэк на config.yaml
+    crit = Criteria()
+    for key, value in data.items():
+        if hasattr(crit, key) and value is not None:
+            setattr(crit, key, value)
+    return crit
+
+
+def save_for(user_id: int, crit: Criteria, site_id: str = "hh") -> None:
+    """Сохранить критерии пользователя для сайта в site_configs."""
+    from sqlalchemy import select
+    from .db import SessionLocal, SiteConfig
+
+    data = asdict(crit)
+    with SessionLocal() as s:
+        row = s.execute(
+            select(SiteConfig).where(
+                SiteConfig.user_id == user_id, SiteConfig.site_id == site_id
+            )
+        ).scalar_one_or_none()
+        now = datetime.datetime.now()
+        if row is None:
+            s.add(SiteConfig(user_id=user_id, site_id=site_id, data=data, updated_at=now))
+        else:
+            row.data = data
+            row.updated_at = now
+        s.commit()
 
 
 def _split(text: str) -> list:
