@@ -3,11 +3,16 @@
 // ---------- утилиты ----------
 const $ = (id) => document.getElementById(id);
 
+// Выбранный сайт поиска работы (hh / superjob / …). Прокидывается во все запросы.
+let currentSite = localStorage.getItem("hh_site") || "hh";
+
 function api(path, body) {
+  // Сайт добавляем в тело каждого POST, чтобы бэкенд знал, к какой сессии слать.
+  const payload = Object.assign({ site: currentSite }, body || {});
   return authFetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body || {}),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -39,7 +44,7 @@ function groupDigits(value) {
 
 // ---------- загрузка/сохранение критериев ----------
 async function loadConfig() {
-  const cfg = await (await authFetch("/api/config")).json();
+  const cfg = await (await authFetch("/api/config?site=" + currentSite)).json();
   for (const k of ["professions", "region", "salary_min", "exclude_words",
                    "include_words", "resume_name", "cover_letter",
                    "daily_limit", "max_pages"]) {
@@ -115,9 +120,9 @@ function attachAutocomplete(input, fetcher, multi) {
 }
 
 const fetchProfessions = async (t) =>
-  (await authFetch("/api/suggest?text=" + encodeURIComponent(t))).json();
+  (await authFetch("/api/suggest?site=" + currentSite + "&text=" + encodeURIComponent(t))).json();
 const fetchCities = async (t) =>
-  (await authFetch("/api/cities?q=" + encodeURIComponent(t))).json();
+  (await authFetch("/api/cities?site=" + currentSite + "&q=" + encodeURIComponent(t))).json();
 
 // ---------- таблица вакансий ----------
 const rows = new Map();      // id -> <tr>
@@ -311,9 +316,32 @@ function renderConnStatus(st) {
 
 async function loadConnStatus() {
   try {
-    const st = await (await authFetch("/api/conn_status")).json();
+    const st = await (await authFetch("/api/conn_status?site=" + currentSite)).json();
     renderConnStatus(st);
   } catch (e) { /* не критично */ }
+}
+
+// Список сайтов в выпадающий селектор; смена сайта переключает весь контекст.
+async function loadSites() {
+  let sites = [];
+  try { sites = await (await authFetch("/api/sites")).json(); } catch (e) { return; }
+  const sel = $("site-select");
+  sel.innerHTML = "";
+  for (const s of sites) {
+    const o = document.createElement("option");
+    o.value = s.id; o.textContent = s.display_name;
+    sel.appendChild(o);
+  }
+  if (!sites.some(s => s.id === currentSite)) currentSite = (sites[0] || {}).id || "hh";
+  sel.value = currentSite;
+  sel.onchange = () => {
+    currentSite = sel.value;
+    localStorage.setItem("hh_site", currentSite);
+    clearTable();
+    loadConfig();
+    loadConnStatus();
+    api("/api/check_login").catch(() => {});  // обновит статус входа для нового сайта
+  };
 }
 
 // ---------- поток событий (SSE) ----------
@@ -322,6 +350,8 @@ function connectEvents() {
   const es = new EventSource("/api/events?token=" + encodeURIComponent(getToken()));
   es.onmessage = (e) => {
     const msg = JSON.parse(e.data);
+    // События приходят от всех сессий пользователя; показываем только выбранный сайт.
+    if (msg.site && msg.site !== currentSite) return;
     if (msg.type === "log") logLine(msg.text);
     else if (msg.type === "login") setStatus(msg.logged_in);
     else if (msg.type === "vacancy") upsertVacancy(msg.vacancy);
@@ -441,6 +471,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     const me = await (await authFetch("/auth/me")).json();
     $("user-email").textContent = me.email || "";
   } catch (e) { return; }  // 401 -> authFetch уже увёл на /login
+  await loadSites();
   await loadConfig();
   attachAutocomplete($("professions"), fetchProfessions, true);
   attachAutocomplete($("region"), fetchCities, false);

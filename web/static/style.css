@@ -33,6 +33,16 @@ body {
 }
 .brand { font-size: 19px; font-weight: 700; }
 .subtitle { font-size: 13px; color: var(--fg-muted); font-weight: 400; margin-left: 8px; }
+.site-select {
+  background: var(--bg-input);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
 .status { font-weight: 600; }
 .status.ok { color: #86efac; }
 .status.bad { color: #fda4af; }

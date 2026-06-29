@@ -7,10 +7,12 @@ from __future__ import annotations
 
 from .base import SiteAdapter
 from .hh import HHAdapter
+from .superjob import SuperJobAdapter
 
 # id сайта -> класс адаптера. Порядок задаёт порядок в выпадающем списке UI.
 SITES: dict[str, type[SiteAdapter]] = {
     HHAdapter.site_id: HHAdapter,
+    SuperJobAdapter.site_id: SuperJobAdapter,
 }
 
 DEFAULT_SITE = HHAdapter.site_id

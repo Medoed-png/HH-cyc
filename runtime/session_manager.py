@@ -113,6 +113,7 @@ class SessionManager:
                     continue
                 msg = event_to_msg(kind, payload)
                 if msg is not None:
+                    msg["site"] = session.site_id  # чтобы UI фильтровал по сайту
                     try:
                         self._publish(session.user_id, msg)
                     except Exception:  # noqa: BLE001 — подписчик мог отвалиться

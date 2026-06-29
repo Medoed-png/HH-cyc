@@ -26,6 +26,7 @@ from hh_bot.cities_list import CITIES
 from hh_bot.db import User
 from hh_bot.suggest import fetch_suggestions
 from runtime import SessionManager
+from sites import list_sites, get_adapter, DEFAULT_SITE
 from web import auth
 from web.auth import current_user
 
@@ -130,11 +131,36 @@ def auth_me(user: User = Depends(current_user)):
     return {"id": user.id, "email": user.email}
 
 
+async def _body(request: Request) -> dict:
+    """Тело JSON-запроса (или {} если тела нет/оно не JSON)."""
+    try:
+        return await request.json()
+    except Exception:  # noqa: BLE001 — пустое/не-JSON тело
+        return {}
+
+
+def _site(data: dict | None = None, request: Request | None = None) -> str:
+    """Выбранный сайт: из тела (POST) или query ?site= (GET); иначе сайт по умолчанию."""
+    if data and data.get("site"):
+        return str(data["site"])
+    if request is not None:
+        q = request.query_params.get("site")
+        if q:
+            return q
+    return DEFAULT_SITE
+
+
 # ---------- API (требуют входа) ----------
+@app.get("/api/sites")
+def api_sites(user: User = Depends(current_user)):
+    """Список доступных сайтов для выпадающего списка в UI."""
+    return list_sites()
+
+
 @app.get("/api/config")
-def api_config(user: User = Depends(current_user)):
+def api_config(request: Request, user: User = Depends(current_user)):
     """Текущие критерии пользователя для заполнения формы."""
-    crit = config_mod.load_for(user.id, "hh")
+    crit = config_mod.load_for(user.id, _site(request=request))
     region_name = {v: k for k, v in CITIES.items()}.get(str(crit.region), "Россия")
     return {
         "professions": ", ".join(crit.profession_texts),
@@ -151,120 +177,124 @@ def api_config(user: User = Depends(current_user)):
 
 @app.post("/api/save")
 async def api_save(request: Request, user: User = Depends(current_user)):
-    crit = config_mod.from_form(await request.json())
-    config_mod.save_for(user.id, crit, "hh")
+    data = await request.json()
+    crit = config_mod.from_form(data)
+    config_mod.save_for(user.id, crit, _site(data))
     return {"ok": True}
 
 
 @app.post("/api/login")
-def api_login(user: User = Depends(current_user)):
-    manager.submit(user.id, "hh", "login")
+async def api_login(request: Request, user: User = Depends(current_user)):
+    manager.submit(user.id, _site(await _body(request)), "login")
     return {"ok": True}
 
 
 @app.post("/api/check_login")
-def api_check_login(user: User = Depends(current_user)):
-    manager.submit(user.id, "hh", "check_login")
+async def api_check_login(request: Request, user: User = Depends(current_user)):
+    manager.submit(user.id, _site(await _body(request)), "check_login")
     return {"ok": True}
 
 
 @app.post("/api/show_browser")
-def api_show_browser(user: User = Depends(current_user)):
+async def api_show_browser(request: Request, user: User = Depends(current_user)):
     """Показать видимое окно браузера (для капчи/ручных действий)."""
-    manager.submit(user.id, "hh", "show_browser")
+    manager.submit(user.id, _site(await _body(request)), "show_browser")
     return {"ok": True}
 
 
 # ---------- подключение аккаунта сайта (серверный логин, M5) ----------
 @app.get("/api/conn_status")
-def api_conn_status(user: User = Depends(current_user)):
-    """Статус подключения аккаунта hh.ru (без пароля)."""
-    return creds_mod.status(user.id, "hh")
+def api_conn_status(request: Request, user: User = Depends(current_user)):
+    """Статус подключения аккаунта выбранного сайта (без пароля)."""
+    return creds_mod.status(user.id, _site(request=request))
 
 
 @app.post("/api/connect")
 async def api_connect(request: Request, user: User = Depends(current_user)):
     """Сохранить (зашифровав) логин/пароль и запустить серверный вход."""
     data = await request.json()
+    site = _site(data)
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
     if not username or not password:
         return JSONResponse({"error": "Укажите логин и пароль"}, status_code=400)
-    creds_mod.store(user.id, "hh", username, password, status=creds_mod.STATUS_INVALID)
-    manager.submit(user.id, "hh", "connect")
+    creds_mod.store(user.id, site, username, password, status=creds_mod.STATUS_INVALID)
+    manager.submit(user.id, site, "connect")
     return {"ok": True}
 
 
 @app.post("/api/sms")
 async def api_sms(request: Request, user: User = Depends(current_user)):
     """Передать код подтверждения (SMS/письмо) для завершения входа."""
-    code = str((await request.json()).get("code", "")).strip()
+    data = await request.json()
+    code = str(data.get("code", "")).strip()
     if not code:
         return JSONResponse({"error": "Введите код"}, status_code=400)
-    manager.submit(user.id, "hh", "submit_sms", code=code)
+    manager.submit(user.id, _site(data), "submit_sms", code=code)
     return {"ok": True}
 
 
 @app.post("/api/disconnect")
-def api_disconnect(user: User = Depends(current_user)):
+async def api_disconnect(request: Request, user: User = Depends(current_user)):
     """Удалить сохранённые креды (отключить аккаунт)."""
-    creds_mod.delete(user.id, "hh")
+    creds_mod.delete(user.id, _site(await _body(request)))
     return {"ok": True}
 
 
 @app.post("/api/search")
 async def api_search(request: Request, user: User = Depends(current_user)):
-    crit = config_mod.from_form(await request.json())
-    manager.submit(user.id, "hh", "search", crit=crit)
+    data = await request.json()
+    crit = config_mod.from_form(data)
+    manager.submit(user.id, _site(data), "search", crit=crit)
     return {"ok": True}
 
 
 @app.post("/api/apply")
 async def api_apply(request: Request, user: User = Depends(current_user)):
-    crit = config_mod.from_form(await request.json())
-    manager.submit(user.id, "hh", "apply", crit=crit)
+    data = await request.json()
+    crit = config_mod.from_form(data)
+    manager.submit(user.id, _site(data), "apply", crit=crit)
     return {"ok": True}
 
 
 @app.post("/api/stop")
-def api_stop(user: User = Depends(current_user)):
-    manager.request_stop_apply(user.id, "hh")
+async def api_stop(request: Request, user: User = Depends(current_user)):
+    manager.request_stop_apply(user.id, _site(await _body(request)))
     return {"ok": True}
 
 
 @app.post("/api/responses")
-def api_responses(user: User = Depends(current_user)):
-    manager.submit(user.id, "hh", "responses")
+async def api_responses(request: Request, user: User = Depends(current_user)):
+    manager.submit(user.id, _site(await _body(request)), "responses")
     return {"ok": True}
 
 
 @app.post("/api/chat")
 async def api_chat(request: Request, user: User = Depends(current_user)):
-    vacancy_id = str((await request.json()).get("vacancy_id", ""))
-    manager.submit(user.id, "hh", "chat", vacancy_id=vacancy_id)
+    data = await request.json()
+    vacancy_id = str(data.get("vacancy_id", ""))
+    manager.submit(user.id, _site(data), "chat", vacancy_id=vacancy_id)
     return {"ok": True}
 
 
 @app.get("/api/suggest")
-def api_suggest(text: str = "", user: User = Depends(current_user)):
-    """Подсказки профессий (проксируем hh.ru, чтобы обойти CORS в браузере)."""
-    return fetch_suggestions(text)
+def api_suggest(text: str = "", site: str = DEFAULT_SITE,
+                user: User = Depends(current_user)):
+    """Подсказки профессий выбранного сайта (через адаптер)."""
+    try:
+        return get_adapter(site).suggest_professions(text)
+    except KeyError:
+        return fetch_suggestions(text)
 
 
 @app.get("/api/cities")
-def api_cities(q: str = "", user: User = Depends(current_user)):
-    """Подсказки городов из справочника по началу слова / вхождению."""
-    q = (q or "").strip().lower()
-    if not q:
+def api_cities(q: str = "", site: str = DEFAULT_SITE,
+               user: User = Depends(current_user)):
+    """Подсказки городов выбранного сайта (через адаптер)."""
+    try:
+        return get_adapter(site).suggest_cities(q)
+    except KeyError:
         return []
-
-    def rank(c):
-        return (c.lower() not in _MAJOR_CITIES, len(c), c)
-
-    starts = sorted((c for c in CITIES if c.lower().startswith(q)), key=rank)
-    contains = sorted((c for c in CITIES if q in c.lower() and not c.lower().startswith(q)),
-                      key=rank)
-    return (starts + contains)[:10]
 
 
 @app.get("/api/events")
