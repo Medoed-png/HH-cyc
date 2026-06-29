@@ -385,6 +385,20 @@ async function loadProxy() {
   } catch (e) { /* не критично */ }
 }
 
+// ---------- Telegram-уведомления ----------
+async function loadTelegram() {
+  try {
+    const st = await (await authFetch("/api/telegram")).json();
+    const badge = $("telegram-badge");
+    if (st.set) { badge.className = "badge b-green"; badge.textContent = "включено"; }
+    else { badge.className = "badge b-gray"; badge.textContent = "выключено"; }
+    if (!st.bot_configured) {
+      $("telegram-hint").textContent =
+        "⚠️ Бот не настроен на сервере (нет TELEGRAM_BOT_TOKEN) — уведомления не отправятся.";
+    }
+  } catch (e) { /* не критично */ }
+}
+
 // ---------- статистика ----------
 async function loadStats() {
   try {
@@ -541,6 +555,20 @@ function bindButtons() {
     logLine("Прокси очищен.");
     loadProxy();
   };
+  $("btn-save-telegram").onclick = async () => {
+    const chat_id = $("telegram-chat-id").value.trim();
+    if (!chat_id) { logLine("Укажите chat_id."); return; }
+    const r = await (await api("/api/telegram", { chat_id })).json();
+    logLine(r.test_sent ? "Telegram подключён — отправил тестовое сообщение."
+                        : "Telegram сохранён, но тест не отправлен (проверьте chat_id и бот на сервере).");
+    loadTelegram();
+  };
+  $("btn-clear-telegram").onclick = async () => {
+    await api("/api/telegram", { chat_id: "" });
+    $("telegram-chat-id").value = "";
+    logLine("Telegram-уведомления отключены.");
+    loadTelegram();
+  };
   $("btn-save").onclick = async () => {
     await api("/api/save", collectForm());
     $("autopilot-badge").style.display = $("autopilot_enabled").checked ? "" : "none";
@@ -573,6 +601,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   connectEvents();
   loadConnStatus();                          // статус подключения аккаунта hh.ru
   loadProxy();                               // статус прокси пользователя
+  loadTelegram();                            // статус Telegram-уведомлений
   loadStats();                               // дашборд статистики
   api("/api/check_login").catch(() => {});  // обновит бейдж статуса входа
   bindAutoLogin();

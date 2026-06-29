@@ -50,6 +50,8 @@ class User(Base):
     status: Mapped[str] = mapped_column(String(16), default="active")
     # Прокси пользователя для анти-бана (зашифрован Fernet). Пусто = без прокси.
     proxy_url_enc: Mapped[str] = mapped_column(String(512), default="")
+    # Telegram chat_id для уведомлений (не секрет, plain). Пусто = выключено.
+    telegram_chat_id: Mapped[str] = mapped_column(String(64), default="")
 
 
 class SiteConfig(Base):
@@ -147,7 +149,8 @@ def _ensure_columns() -> None:
     from sqlalchemy import inspect, text
 
     wanted = {
-        "users": [("proxy_url_enc", "VARCHAR(512) DEFAULT ''")],
+        "users": [("proxy_url_enc", "VARCHAR(512) DEFAULT ''"),
+                  ("telegram_chat_id", "VARCHAR(64) DEFAULT ''")],
         "applied_history": [("last_status", "VARCHAR(64) DEFAULT ''")],
     }
     insp = inspect(engine)

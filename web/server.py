@@ -285,6 +285,24 @@ async def api_set_proxy(request: Request, user: User = Depends(current_user)):
     return {"ok": True}
 
 
+# ---------- Telegram-уведомления (per-user) ----------
+@app.get("/api/telegram")
+def api_telegram_status(user: User = Depends(current_user)):
+    """Задан ли chat_id и настроен ли бот на сервере (есть токен)."""
+    return creds_mod.telegram_status(user.id)
+
+
+@app.post("/api/telegram")
+async def api_set_telegram(request: Request, user: User = Depends(current_user)):
+    """Сохранить/очистить chat_id; при наличии — отправить тестовое сообщение."""
+    from hh_bot import notify
+    chat_id = str((await request.json()).get("chat_id", "")).strip()
+    creds_mod.set_telegram(user.id, chat_id)
+    sent = notify.send_telegram(chat_id, "✅ HH-бот: уведомления подключены.") \
+        if chat_id else False
+    return {"ok": True, "test_sent": sent}
+
+
 @app.post("/api/search")
 async def api_search(request: Request, user: User = Depends(current_user)):
     data = await request.json()

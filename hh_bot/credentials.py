@@ -153,6 +153,31 @@ def proxy_status(user_id: int) -> dict:
     return {"set": bool(url), "proxy_url": _mask_proxy(url)}
 
 
+# --- Telegram chat_id пользователя (per-user, для уведомлений) ---
+
+def set_telegram(user_id: int, chat_id: str) -> None:
+    """Сохранить chat_id Telegram пользователя (пустая строка — отключить)."""
+    with SessionLocal() as s:
+        user = s.get(User, user_id)
+        if user is None:
+            return
+        user.telegram_chat_id = (chat_id or "").strip()
+        s.commit()
+
+
+def get_telegram(user_id: int) -> str:
+    """chat_id Telegram пользователя (или '')."""
+    with SessionLocal() as s:
+        user = s.get(User, user_id)
+        return (user.telegram_chat_id or "") if user else ""
+
+
+def telegram_status(user_id: int) -> dict:
+    """Для UI: задан ли chat_id и настроен ли бот на сервере (есть токен)."""
+    from .notify import is_configured
+    return {"set": bool(get_telegram(user_id)), "bot_configured": is_configured()}
+
+
 def delete(user_id: int, site_id: str) -> None:
     """Удалить креды пользователя для сайта (отключение аккаунта)."""
     with SessionLocal() as s:

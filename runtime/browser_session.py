@@ -18,6 +18,7 @@ from hh_bot.config import Criteria
 from hh_bot import antiban
 from hh_bot import filters
 from hh_bot import credentials
+from hh_bot import notify
 from hh_bot.storage import Storage
 from sites import get_adapter
 from sites.base import LoginStatus
@@ -331,6 +332,7 @@ class BrowserSession(threading.Thread):
         # Заносим все текущие отклики с сайта в память, чтобы не открывать повторно.
         import re
         added = 0
+        invites = []  # сменившиеся на «приглашение» — для Telegram-уведомления
         for it in result["items"]:
             m = re.search(r"/vacancy/(\d+)", it.get("url", ""))
             if not m:
@@ -340,14 +342,32 @@ class BrowserSession(threading.Thread):
                 self._storage.mark_applied(vid, it["title"], it["company"],
                                            source="sync")
                 added += 1
-            # Записать статус отклика для аналитики (приглашения/отказы/просмотры).
+            # Записать статус отклика для аналитики; set_status вернёт прежний при
+            # изменении — ловим переход в «приглашение/собеседование» для уведомления.
             status = it.get("status", "")
             if status:
-                self._storage.set_status(vid, status)
+                prev = self._storage.set_status(vid, status)
+                low = status.lower()
+                if prev is not None and any(k in low for k in
+                                            ("приглаш", "собеседов", "оффер")):
+                    invites.append((it.get("title", ""), it.get("company", ""), status))
         if added:
             self._log(f"Добавлено в память откликов: {added} (повторно не откликнемся).")
+        if invites:
+            self._notify_telegram(invites)
         self.events.put((EV_RESPONSES, result))
         self.events.put((EV_DONE, "responses"))
+
+    def _notify_telegram(self, items: list) -> None:
+        """Отправить Telegram-уведомление о новых приглашениях (если задан chat_id)."""
+        chat_id = credentials.get_telegram(self.user_id)
+        if not chat_id:
+            return
+        lines = ["🔔 Новые статусы откликов на hh.ru:"]
+        for title, company, status in items[:10]:
+            lines.append(f"• {status}: {title} — {company}")
+        if notify.send_telegram(chat_id, "\n".join(lines)):
+            self._log(f"Telegram-уведомление отправлено ({len(items)}).")
 
     def _cmd_chat(self, vacancy_id: str) -> None:
         """Прочитать чат одной вакансии по требованию."""
