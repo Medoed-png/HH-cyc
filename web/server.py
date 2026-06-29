@@ -1,8 +1,9 @@
-"""Локальный веб-интерфейс HH-бота (Flask) поверх готового Python-бэкенда.
+"""Веб-интерфейс HH-бота на FastAPI (ASGI) поверх Python-бэкенда.
 
-UI открывается в браузере на http://127.0.0.1:8000. Логин на hh.ru и парсинг —
-как и раньше, через Playwright (рабочий поток Worker). Здесь — только веб-слой:
-HTTP-эндпоинты + поток событий (SSE) для обновлений в реальном времени.
+Порт с Flask на FastAPI/uvicorn (M3a): поведение прежнее — те же эндпоинты,
+статика и поток событий (SSE). ASGI выбран ради аутентификации/скоупинга через
+зависимости (M3b) и масштабируемого SSE в облаке (M4). Логин на hh.ru и парсинг —
+как и раньше, через рабочий поток Worker (Playwright).
 """
 from __future__ import annotations
 
@@ -12,7 +13,10 @@ import queue
 import threading
 import webbrowser
 
-from flask import Flask, Response, jsonify, request, send_from_directory
+import uvicorn
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from hh_bot import config as config_mod
 from hh_bot.cities_list import CITIES
@@ -28,9 +32,10 @@ _MAJOR_CITIES = {
     "уфа", "красноярск", "краснодар", "воронеж", "пермь", "волгоград", "россия",
 }
 
-app = Flask(__name__, static_folder=None)
+app = FastAPI(title="HH-бот")
 
 # Один рабочий поток на всё приложение (владеет браузером Playwright).
+# Несколько пользователей и пул сессий появятся в M4.
 worker = Worker()
 worker.start()
 
@@ -63,23 +68,21 @@ threading.Thread(target=_pump_events, daemon=True).start()
 
 
 # ---------- статика ----------
-@app.route("/")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/")
 def index():
-    return send_from_directory(STATIC_DIR, "index.html")
-
-
-@app.route("/static/<path:filename>")
-def static_files(filename):
-    return send_from_directory(STATIC_DIR, filename)
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
 # ---------- API ----------
-@app.route("/api/config")
+@app.get("/api/config")
 def api_config():
     """Текущие критерии для заполнения формы."""
     crit = config_mod.load()
     region_name = {v: k for k, v in CITIES.items()}.get(str(crit.region), "Россия")
-    return jsonify({
+    return {
         "professions": ", ".join(crit.profession_texts),
         "region": region_name,
         "salary_min": crit.salary_min,
@@ -89,80 +92,84 @@ def api_config():
         "cover_letter": crit.cover_letter,
         "daily_limit": crit.daily_limit,
         "max_pages": crit.max_pages,
-    })
+    }
 
 
-@app.route("/api/save", methods=["POST"])
-def api_save():
-    crit = config_mod.from_form(request.get_json(force=True))
+@app.post("/api/save")
+async def api_save(request: Request):
+    crit = config_mod.from_form(await request.json())
     config_mod.save(crit)
-    return jsonify({"ok": True})
+    return {"ok": True}
 
 
-@app.route("/api/login", methods=["POST"])
+@app.post("/api/login")
 def api_login():
     worker.submit("login")
-    return jsonify({"ok": True})
+    return {"ok": True}
 
 
-@app.route("/api/search", methods=["POST"])
-def api_search():
-    crit = config_mod.from_form(request.get_json(force=True))
+@app.post("/api/search")
+async def api_search(request: Request):
+    crit = config_mod.from_form(await request.json())
     worker.submit("search", crit=crit)
-    return jsonify({"ok": True})
+    return {"ok": True}
 
 
-@app.route("/api/apply", methods=["POST"])
-def api_apply():
-    crit = config_mod.from_form(request.get_json(force=True))
+@app.post("/api/apply")
+async def api_apply(request: Request):
+    crit = config_mod.from_form(await request.json())
     worker.submit("apply", crit=crit)
-    return jsonify({"ok": True})
+    return {"ok": True}
 
 
-@app.route("/api/stop", methods=["POST"])
+@app.post("/api/stop")
 def api_stop():
     worker.request_stop_apply()
-    return jsonify({"ok": True})
+    return {"ok": True}
 
 
-@app.route("/api/responses", methods=["POST"])
+@app.post("/api/responses")
 def api_responses():
     worker.submit("responses")
-    return jsonify({"ok": True})
+    return {"ok": True}
 
 
-@app.route("/api/chat", methods=["POST"])
-def api_chat():
-    vacancy_id = str(request.get_json(force=True).get("vacancy_id", ""))
+@app.post("/api/chat")
+async def api_chat(request: Request):
+    vacancy_id = str((await request.json()).get("vacancy_id", ""))
     worker.submit("chat", vacancy_id=vacancy_id)
-    return jsonify({"ok": True})
+    return {"ok": True}
 
 
-@app.route("/api/suggest")
-def api_suggest():
+@app.get("/api/suggest")
+def api_suggest(text: str = ""):
     """Подсказки профессий (проксируем hh.ru, чтобы обойти CORS в браузере)."""
-    return jsonify(fetch_suggestions(request.args.get("text", "")))
+    return fetch_suggestions(text)
 
 
-@app.route("/api/cities")
-def api_cities():
+@app.get("/api/cities")
+def api_cities(q: str = ""):
     """Подсказки городов из справочника по началу слова / вхождению."""
-    q = (request.args.get("q", "") or "").strip().lower()
+    q = (q or "").strip().lower()
     if not q:
-        return jsonify([])
-    # Сперва крупные города, затем короткие названия, затем по алфавиту.
+        return []
+
     def rank(c):
         return (c.lower() not in _MAJOR_CITIES, len(c), c)
 
     starts = sorted((c for c in CITIES if c.lower().startswith(q)), key=rank)
     contains = sorted((c for c in CITIES if q in c.lower() and not c.lower().startswith(q)),
                       key=rank)
-    return jsonify((starts + contains)[:10])
+    return (starts + contains)[:10]
 
 
-@app.route("/api/events")
+@app.get("/api/events")
 def api_events():
-    """Поток событий (Server-Sent Events) для обновлений в реальном времени."""
+    """Поток событий (Server-Sent Events) для обновлений в реальном времени.
+
+    Синхронный генератор: Starlette крутит его в пуле потоков, поэтому блокирующее
+    ожидание очереди не мешает остальным запросам.
+    """
     def stream():
         while True:
             try:
@@ -170,7 +177,7 @@ def api_events():
                 yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
             except queue.Empty:
                 yield ": keep-alive\n\n"  # heartbeat, чтобы соединение не падало
-    return Response(stream(), mimetype="text/event-stream")
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 def main() -> None:
@@ -178,8 +185,7 @@ def main() -> None:
     print(f"HH-бот: откройте {url}")
     worker.submit("check_login")  # проверить вход при старте
     threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    # threaded=True — чтобы SSE не блокировал остальные запросы.
-    app.run(host="127.0.0.1", port=8000, threaded=True, debug=False)
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")
 
 
 if __name__ == "__main__":
