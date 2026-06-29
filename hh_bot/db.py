@@ -68,6 +68,34 @@ class SiteConfig(Base):
     )
 
 
+class SiteCredential(Base):
+    """Учётные данные пользователя для входа на сайт (логин/пароль зашифрованы).
+
+    Пароль и логин хранятся в виде Fernet-токенов (см. hh_bot/crypto.py) — их
+    можно расшифровать только мастер-ключом сервиса. status отражает состояние
+    подключения аккаунта: connected / needs_sms / needs_captcha / invalid.
+    """
+
+    __tablename__ = "site_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    site_id: Mapped[str] = mapped_column(String(32), default="hh")
+    username_enc: Mapped[str] = mapped_column(String(512), default="")
+    password_enc: Mapped[str] = mapped_column(String(512), default="")
+    status: Mapped[str] = mapped_column(String(16), default="invalid")
+    last_login_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime, nullable=True, default=None
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "site_id", name="uq_sitecred_user_site"),
+    )
+
+
 class AppliedHistory(Base):
     """История откликов с привязкой к пользователю и сайту (дедуп + дневной лимит)."""
 
