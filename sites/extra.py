@@ -48,14 +48,23 @@ class HabrCareerAdapter(GenericSiteAdapter):
 
 
 class RabotaRuAdapter(GenericSiteAdapter):
+    """Rabota.ru. Поиск сверен вживую (2026-06-30).
+
+    Поиск публичный. Отклик требует входа+анкеты — пока заглушка. Регион не
+    фильтруется (по умолчанию выдача по Москве/всей базе).
+    """
     site_id = "rabota"
     display_name = "Rabota.ru"
     BASE = "https://www.rabota.ru"
-    SEARCH_URL = "https://www.rabota.ru/vacancy"
+    SEARCH_URL = "https://www.rabota.ru/vacancy/"
     QUERY_PARAM = "query"
     PAGE_PARAM = "page"
     PAGE_BASE = 1
     LOGIN_URL = "https://www.rabota.ru/login"
+    CARD = ".vacancy-preview-card"
+    TITLE_LINK = ".vacancy-preview-card__title_border"
+    COMPANY = ".vacancy-preview-card__company-name"
+    SALARY = ".vacancy-preview-card__salary"
     ID_RE = r"/vacancy/(\d+)"
 
 
