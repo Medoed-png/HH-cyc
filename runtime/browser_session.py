@@ -333,10 +333,17 @@ class BrowserSession(threading.Thread):
         added = 0
         for it in result["items"]:
             m = re.search(r"/vacancy/(\d+)", it.get("url", ""))
-            if m and not self._storage.is_applied(m.group(1)):
-                self._storage.mark_applied(m.group(1), it["title"], it["company"],
+            if not m:
+                continue
+            vid = m.group(1)
+            if not self._storage.is_applied(vid):
+                self._storage.mark_applied(vid, it["title"], it["company"],
                                            source="sync")
                 added += 1
+            # Записать статус отклика для аналитики (приглашения/отказы/просмотры).
+            status = it.get("status", "")
+            if status:
+                self._storage.set_status(vid, status)
         if added:
             self._log(f"Добавлено в память откликов: {added} (повторно не откликнемся).")
         self.events.put((EV_RESPONSES, result))

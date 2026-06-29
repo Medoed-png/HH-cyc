@@ -181,6 +181,13 @@ def api_config(request: Request, user: User = Depends(current_user)):
     }
 
 
+@app.get("/api/stats")
+def api_stats(request: Request, user: User = Depends(current_user)):
+    """Агрегаты для дашборда статистики (по выбранному сайту)."""
+    from hh_bot.storage import Storage
+    return Storage(user_id=user.id, site_id=_site(request=request)).stats()
+
+
 @app.post("/api/save")
 async def api_save(request: Request, user: User = Depends(current_user)):
     data = await request.json()

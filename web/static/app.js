@@ -360,6 +360,7 @@ async function loadSites() {
     clearTable();
     loadConfig();
     loadConnStatus();
+    loadStats();
     api("/api/check_login").catch(() => {});  // обновит статус входа для нового сайта
   };
 }
@@ -380,6 +381,25 @@ async function loadProxy() {
   } catch (e) { /* не критично */ }
 }
 
+// ---------- статистика ----------
+async function loadStats() {
+  try {
+    const s = await (await authFetch("/api/stats?site=" + currentSite)).json();
+    $("st-today").textContent = s.applied_today ?? 0;
+    $("st-total").textContent = s.applied_total ?? 0;
+    $("st-invites").textContent = s.invitations ?? 0;
+    $("st-reject").textContent = s.rejections ?? 0;
+    $("st-viewed").textContent = s.viewed ?? 0;
+    $("st-conv").textContent = (s.conversion ?? 0) + "%";
+  } catch (e) { /* не критично */ }
+}
+
+let _statsTimer = null;
+function scheduleStatsRefresh() {  // дебаунс: не дёргать на каждый отклик
+  clearTimeout(_statsTimer);
+  _statsTimer = setTimeout(loadStats, 1500);
+}
+
 // ---------- поток событий (SSE) ----------
 function connectEvents() {
   // Токен в query: EventSource не умеет слать заголовок Authorization.
@@ -390,8 +410,11 @@ function connectEvents() {
     if (msg.site && msg.site !== currentSite) return;
     if (msg.type === "log") logLine(msg.text);
     else if (msg.type === "login") setStatus(msg.logged_in);
-    else if (msg.type === "vacancy") upsertVacancy(msg.vacancy);
-    else if (msg.type === "responses") renderResponses(msg.items, msg.unread || 0);
+    else if (msg.type === "vacancy") {
+      upsertVacancy(msg.vacancy);
+      if (msg.vacancy && msg.vacancy.status === "откликнулись") scheduleStatsRefresh();
+    }
+    else if (msg.type === "responses") { renderResponses(msg.items, msg.unread || 0); loadStats(); }
     else if (msg.type === "chat") onChatLoaded(msg.vacancy_id, msg.messages);
     else if (msg.type === "conn_status") renderConnStatus(msg);
   };
@@ -475,6 +498,7 @@ function bindButtons() {
     logLine("Открываю окно браузера…");
     api("/api/show_browser");
   };
+  $("btn-refresh-stats").onclick = loadStats;
   $("btn-reconnect").onclick = () => {
     logLine("Выхожу из аккаунта сайта — сейчас появится форма подключения…");
     api("/api/logout_site");  // сбросит cookies -> придёт login=false -> покажется панель
@@ -539,6 +563,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   connectEvents();
   loadConnStatus();                          // статус подключения аккаунта hh.ru
   loadProxy();                               // статус прокси пользователя
+  loadStats();                               // дашборд статистики
   api("/api/check_login").catch(() => {});  // обновит бейдж статуса входа
   bindAutoLogin();
 });

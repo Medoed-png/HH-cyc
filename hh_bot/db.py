@@ -114,6 +114,9 @@ class AppliedHistory(Base):
     )
     # 'bot' — отклик бота (считается в дневной лимит); 'sync' — ручной/синхронизированный.
     source: Mapped[str] = mapped_column(String(16), default="bot")
+    # Последний известный статус отклика со стороны работодателя (для аналитики):
+    # '', 'приглашение', 'отказ', 'просмотрен', 'сообщение' и т.п.
+    last_status: Mapped[str] = mapped_column(String(64), default="")
 
     __table_args__ = (
         UniqueConstraint("user_id", "site_id", "vacancy_id",
@@ -145,6 +148,7 @@ def _ensure_columns() -> None:
 
     wanted = {
         "users": [("proxy_url_enc", "VARCHAR(512) DEFAULT ''")],
+        "applied_history": [("last_status", "VARCHAR(64) DEFAULT ''")],
     }
     insp = inspect(engine)
     existing_tables = set(insp.get_table_names())
