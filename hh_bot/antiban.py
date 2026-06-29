@@ -16,7 +16,9 @@
 from __future__ import annotations
 
 import math
+import os
 import random
+import threading
 import time
 from typing import Any
 
@@ -75,6 +77,54 @@ def apply_stealth(context) -> None:
 def human_pause(min_s: float = 2.0, max_s: float = 8.0) -> None:
     """Пауза случайной длительности (имитация человеческого темпа)."""
     time.sleep(random.uniform(min_s, max_s))
+
+
+# --- Rate-limiter и джиттер старта (M6c, in-process; в облаке заменится Redis) ---
+
+class _RateLimiter:
+    """Разносит «тяжёлые» действия во времени: глобально и по пользователю.
+
+    Глобальный интервал бережёт общий IP сервера (пока нет per-user прокси),
+    пользовательский — имитирует человеческий темп одного аккаунта. Резервируем
+    слот под локом (сдвигаем «последнее время» вперёд), спим уже вне лока, чтобы
+    параллельные сессии честно расходились, а не сериализовались на блокировке.
+    """
+
+    def __init__(self, global_min: float, user_min: float):
+        self.global_min = global_min
+        self.user_min = user_min
+        self._lock = threading.Lock()
+        self._global_next = 0.0
+        self._user_next: dict[int, float] = {}
+
+    def wait(self, user_id: int) -> float:
+        with self._lock:
+            now = time.monotonic()
+            start = max(now, self._global_next, self._user_next.get(user_id, 0.0))
+            start += random.uniform(0.0, 0.5)  # небольшой джиттер
+            self._global_next = start + self.global_min
+            self._user_next[user_id] = start + self.user_min
+            delay = max(0.0, start - now)
+        if delay > 0:
+            time.sleep(delay)
+        return delay
+
+
+# Дефолты щадящие (локалка); в облаке поднимем через окружение.
+_limiter = _RateLimiter(
+    global_min=float(os.environ.get("ANTIBAN_GLOBAL_MIN_SECONDS", "1.5")),
+    user_min=float(os.environ.get("ANTIBAN_USER_MIN_SECONDS", "3.0")),
+)
+
+
+def rate_limit(user_id: int) -> float:
+    """Притормозить перед тяжёлым действием (поиск/отклики/ответы). Возвращает паузу."""
+    return _limiter.wait(user_id)
+
+
+def session_start_jitter() -> None:
+    """Случайная задержка при старте новой сессии — разнести одновременные старты."""
+    time.sleep(random.uniform(0.5, 3.0))
 
 
 def _bezier_points(x0: float, y0: float, x1: float, y1: float, steps: int):

@@ -39,10 +39,13 @@ def _default_headless() -> bool:
 class Browser:
     """Обёртка над persistent-контекстом Chromium."""
 
-    def __init__(self, headless: bool | None = None, user_data_dir: str | None = None):
+    def __init__(self, headless: bool | None = None, user_data_dir: str | None = None,
+                 proxy_url: str | None = None):
         # headless=None — берём из окружения (по умолчанию невидимо).
         self.headless = _default_headless() if headless is None else headless
         self.user_data_dir = user_data_dir or USER_DATA_DIR
+        # Прокси для анти-бана (per-user IP). Пока подаётся снаружи; реальный пул — M8.
+        self.proxy_url = proxy_url or None
         # Файл с cookies рядом с профилем (включая сессионные — их профиль теряет).
         self._cookies_path = self.user_data_dir.rstrip("/\\") + ".cookies.json"
         self._pw = None
@@ -57,7 +60,7 @@ class Browser:
         self.context = self._pw.chromium.launch_persistent_context(
             self.user_data_dir,
             headless=self.headless,
-            **antiban.context_options(),
+            **antiban.context_options(self.proxy_url),
         )
         antiban.apply_stealth(self.context)  # маскировка navigator.webdriver и т.п.
         self._restore_cookies()

@@ -15,6 +15,7 @@ import time
 
 from hh_bot.browser import Browser
 from hh_bot.config import Criteria
+from hh_bot import antiban
 from hh_bot import filters
 from hh_bot import credentials
 from hh_bot.storage import Storage
@@ -74,6 +75,11 @@ class BrowserSession(threading.Thread):
         print(f"[bot u{self.user_id}/{self.site_id}]", msg, flush=True)
         self.events.put((EV_LOG, msg))
 
+    def _proxy_url(self) -> str | None:
+        """Прокси для этой сессии. Пока глобальный из env HH_PROXY_URL; per-user
+        хранилище (users.proxy_url_enc) + UI и реальный пул — на этапе облака (M8)."""
+        return os.environ.get("HH_PROXY_URL", "").strip() or None
+
     def _ensure_browser(self, visible: bool = False) -> Browser:
         # Браузер мог быть закрыт пользователем (закрыл окно) или упасть —
         # тогда пересоздаём, иначе page.goto падает с "target closed".
@@ -96,9 +102,12 @@ class BrowserSession(threading.Thread):
         if self._browser is None:
             # visible -> окно с интерфейсом; иначе режим по умолчанию (невидимый).
             self._browser = Browser(
-                headless=False if visible else None, user_data_dir=self._profile_dir
+                headless=False if visible else None,
+                user_data_dir=self._profile_dir,
+                proxy_url=self._proxy_url(),
             )
             self._browser.start()
+            antiban.session_start_jitter()  # разнести одновременные старты сессий
         return self._browser
 
     def _persist_cookies(self) -> None:
@@ -253,6 +262,7 @@ class BrowserSession(threading.Thread):
             return []
         all_found = []
         for text in crit.profession_texts:
+            antiban.rate_limit(self.user_id)  # разнести запросы во времени
             self._log(f"Поиск: {text}")
             found = self.adapter.search(
                 br.page, text, crit.region, crit.max_pages, log=self._log
@@ -277,6 +287,7 @@ class BrowserSession(threading.Thread):
             self._log(f"Сначала войдите на {self.adapter.display_name} (кнопка «Войти»).")
             self.events.put((EV_DONE, "responses"))
             return
+        antiban.rate_limit(self.user_id)  # не частить с запросами к hh.ru
         self._log("Загружаю ответы на отклики…")
         result = self.adapter.fetch_responses(br.page, log=self._log)
         # Заносим все текущие отклики с сайта в память, чтобы не открывать повторно.
