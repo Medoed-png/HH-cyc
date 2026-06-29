@@ -11,6 +11,7 @@ Redis (pub/sub событий и распределённая очередь) п
 """
 from __future__ import annotations
 
+import os
 import queue
 import threading
 import time
@@ -42,13 +43,17 @@ def event_to_msg(kind: str, payload) -> dict | None:
 class SessionManager:
     """Пул сессий по ключу (user_id, site_id)."""
 
-    def __init__(self, publish: Publish, max_sessions: int = 6,
-                 idle_timeout: float = 600.0):
+    def __init__(self, publish: Publish, max_sessions: int | None = None,
+                 idle_timeout: float | None = None):
         self._publish = publish
         self._sessions: dict[tuple[int, str], BrowserSession] = {}
         self._lock = threading.RLock()
-        self._max = max_sessions
-        self._idle_timeout = idle_timeout
+        # Настраиваются через окружение (для облака); локальные дефолты щадящие,
+        # чтобы браузер не закрывался слишком часто.
+        self._max = max_sessions if max_sessions is not None \
+            else int(os.environ.get("MAX_SESSIONS", "6"))
+        self._idle_timeout = idle_timeout if idle_timeout is not None \
+            else float(os.environ.get("SESSION_IDLE_SECONDS", "1800"))
         threading.Thread(target=self._reaper, daemon=True).start()
 
     # --- публичный API ---
@@ -80,6 +85,20 @@ class SessionManager:
     def active_count(self) -> int:
         with self._lock:
             return len(self._sessions)
+
+    def shutdown_all(self, join_timeout: float = 10.0) -> None:
+        """Корректно закрыть все сессии (каждая сохранит cookies и закроет браузер).
+
+        Вызывается при остановке приложения: иначе daemon-потоки сессий гибнут без
+        close(), и сессионные cookies (вход на сайт) не сохраняются на диск.
+        """
+        with self._lock:
+            sessions = list(self._sessions.values())
+            self._sessions.clear()
+        for sess in sessions:
+            sess.shutdown()  # ставит команду quit -> сессия закроет браузер сама
+        for sess in sessions:
+            sess.join(timeout=join_timeout)
 
     # --- внутреннее ---
     def _start_pump(self, session: BrowserSession) -> None:

@@ -13,6 +13,8 @@ import threading
 import time
 import webbrowser
 
+from contextlib import asynccontextmanager
+
 import uvicorn
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -35,7 +37,14 @@ _MAJOR_CITIES = {
     "уфа", "красноярск", "краснодар", "воронеж", "пермь", "волгоград", "россия",
 }
 
-app = FastAPI(title="HH-бот")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    # При остановке: корректно закрыть все сессии, чтобы сохранились cookies (вход).
+    manager.shutdown_all()
+
+
+app = FastAPI(title="HH-бот", lifespan=lifespan)
 
 # --- per-user SSE: реестр подписчиков по user_id ---
 # Каждое открытое соединение /api/events регистрирует свою очередь; события

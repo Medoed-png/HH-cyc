@@ -77,6 +77,11 @@ class BrowserSession(threading.Thread):
             self._browser.start()
         return self._browser
 
+    def _persist_cookies(self) -> None:
+        """Сохранить cookies сразу (после подтверждённого входа), не дожидаясь close."""
+        if self._browser is not None:
+            self._browser._save_cookies()
+
     def run(self) -> None:
         while self._running:
             try:
@@ -112,6 +117,8 @@ class BrowserSession(threading.Thread):
     def _cmd_check_login(self) -> None:
         br = self._ensure_browser()
         logged = self.adapter.is_logged_in(br.page)
+        if logged:
+            self._persist_cookies()  # закрепить вход на диске сразу
         self._log("Авторизация подтверждена." if logged else "Вы ещё не вошли.")
         self.events.put((EV_LOGIN, logged))
         self.events.put((EV_DONE, "check_login"))
