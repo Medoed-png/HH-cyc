@@ -48,6 +48,8 @@ class User(Base):
         DateTime, default=datetime.datetime.now
     )
     status: Mapped[str] = mapped_column(String(16), default="active")
+    # Прокси пользователя для анти-бана (зашифрован Fernet). Пусто = без прокси.
+    proxy_url_enc: Mapped[str] = mapped_column(String(512), default="")
 
 
 class SiteConfig(Base):
@@ -121,9 +123,39 @@ class AppliedHistory(Base):
 
 
 def init_db() -> None:
-    """Создать таблицы (идемпотентно) и перенести старую историю откликов."""
+    """Создать таблицы (идемпотентно) и перенести старую историю откликов.
+
+    Для локальной разработки достаточно create_all; в проде схемой управляет
+    Alembic (`alembic upgrade head`, см. migrations/). _ensure_columns добавляет
+    колонки, появившиеся позже, в уже существующую локальную БД (create_all их
+    не доводит до существующих таблиц).
+    """
     Base.metadata.create_all(engine)
+    _ensure_columns()
     migrate_legacy_history()
+
+
+def _ensure_columns() -> None:
+    """Идемпотентно добавить недостающие колонки в существующие таблицы (dev).
+
+    SQLite/Postgres понимают ALTER TABLE ... ADD COLUMN. Для свежей БД колонки уже
+    созданы create_all, поэтому добавляем только отсутствующие.
+    """
+    from sqlalchemy import inspect, text
+
+    wanted = {
+        "users": [("proxy_url_enc", "VARCHAR(512) DEFAULT ''")],
+    }
+    insp = inspect(engine)
+    existing_tables = set(insp.get_table_names())
+    with engine.begin() as conn:
+        for table, cols in wanted.items():
+            if table not in existing_tables:
+                continue
+            have = {c["name"] for c in insp.get_columns(table)}
+            for name, ddl in cols:
+                if name not in have:
+                    conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {name} {ddl}'))
 
 
 def migrate_legacy_history() -> None:
