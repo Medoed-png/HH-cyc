@@ -202,6 +202,13 @@ async def api_show_browser(request: Request, user: User = Depends(current_user))
     return {"ok": True}
 
 
+@app.post("/api/logout_site")
+async def api_logout_site(request: Request, user: User = Depends(current_user)):
+    """Выйти из аккаунта сайта в сессии (сбросить cookies) — для смены аккаунта."""
+    manager.submit(user.id, _site(await _body(request)), "logout_site")
+    return {"ok": True}
+
+
 # ---------- подключение аккаунта сайта (серверный логин, M5) ----------
 @app.get("/api/conn_status")
 def api_conn_status(request: Request, user: User = Depends(current_user)):

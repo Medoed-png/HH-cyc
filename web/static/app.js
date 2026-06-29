@@ -387,6 +387,10 @@ function setStatus(loggedIn) {
   // повторным вводом логина/пароля от hh.ru.
   const card = $("connect-card");
   if (card) card.style.display = loggedIn ? "none" : "";
+  // Кнопка «Подключить аккаунт» — наоборот, видна только когда уже вошли
+  // (даёт выйти из сайта и подключить другой аккаунт по логину/паролю).
+  const rb = $("btn-reconnect");
+  if (rb) rb.style.display = loggedIn ? "" : "none";
 }
 
 // ---------- сворачивание разделов ----------
@@ -450,6 +454,10 @@ function bindButtons() {
   $("btn-show-browser").onclick = () => {
     logLine("Открываю окно браузера…");
     api("/api/show_browser");
+  };
+  $("btn-reconnect").onclick = () => {
+    logLine("Выхожу из аккаунта сайта — сейчас появится форма подключения…");
+    api("/api/logout_site");  // сбросит cookies -> придёт login=false -> покажется панель
   };
   $("btn-connect").onclick = () => {
     const username = $("hh-username").value.trim();

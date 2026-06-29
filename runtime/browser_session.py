@@ -210,6 +210,38 @@ class BrowserSession(threading.Thread):
             self.events.put((EV_LOGIN, False))
         self._emit_conn()
 
+    def _cmd_logout_site(self) -> None:
+        """Выйти из аккаунта сайта в сессии: сбросить cookies/профиль браузера.
+
+        Нужно, чтобы проверить серверный вход по логину/паролю (иначе бот видит
+        активную сессию по cookies и форму входа не проходит). После сброса
+        check_login покажет «не вошли», и появится панель подключения.
+        """
+        import shutil
+        cookies_path = self._profile_dir.rstrip("/\\") + ".cookies.json"
+        # Сбросить cookies в живом контексте, затем закрыть браузер.
+        try:
+            if self._browser is not None and self._browser.is_alive():
+                self._browser.context.clear_cookies()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if self._browser is not None:
+                self._browser.close()
+        except Exception:  # noqa: BLE001
+            pass
+        self._browser = None
+        # Удалить сохранённые cookies и профиль на диске (иначе вход восстановится).
+        try:
+            if os.path.exists(cookies_path):
+                os.remove(cookies_path)
+        except Exception:  # noqa: BLE001
+            pass
+        shutil.rmtree(self._profile_dir, ignore_errors=True)
+        self._log(f"Вышли из аккаунта {self.adapter.display_name} — можно подключить другой.")
+        self.events.put((EV_LOGIN, False))
+        self.events.put((EV_DONE, "logout_site"))
+
     def _cmd_connect(self) -> None:
         """Серверный вход: берём сохранённые креды и логинимся в фоне."""
         creds = credentials.get(self.user_id, self.site_id)
