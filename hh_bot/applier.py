@@ -308,6 +308,36 @@ def _deliver_cover_letter(page: Page, vacancy_id: str, text: str, log) -> str:
     return ""
 
 
+def _select_resume(page: Page, resume_name: str, log) -> None:
+    """Выбрать резюме по имени, если на странице есть селектор резюме.
+
+    ⚠️ best-effort: механика выбора резюме hh.ru (нативный select или кастомный
+    дропдаун) требует живой сверки. Если контрол не найден — ничего не делаем
+    (hh использует резюме по умолчанию / единственное).
+    """
+    name = (resume_name or "").strip()
+    if not name:
+        return
+    sel = page.query_selector(selectors.RESUME_SELECT)
+    if sel is None:
+        return
+    try:
+        tag = (sel.evaluate("e => e.tagName") or "").lower()
+        if tag == "select":
+            page.select_option(selectors.RESUME_SELECT, label=name)
+            page.wait_for_timeout(_WAIT_TOGGLE)
+            return
+        # Кастомный дропдаун: открыть и выбрать пункт по тексту имени резюме.
+        antiban.human_click(page, sel)
+        page.wait_for_timeout(_WAIT_TOGGLE)
+        option = page.query_selector(f'text="{name}"')
+        if option is not None:
+            antiban.human_click(page, option)
+            page.wait_for_timeout(_WAIT_TOGGLE)
+    except Exception as e:  # noqa: BLE001 — выбор резюме не должен ломать отклик
+        log(f"  не удалось выбрать резюме «{name}»: {e}")
+
+
 def apply_to(page: Page, vacancy: Vacancy, crit: Criteria, log=lambda m: None) -> str:
     """Откликнуться на одну вакансию. Возвращает итоговый статус.
 
@@ -343,6 +373,7 @@ def apply_to(page: Page, vacancy: Vacancy, crit: Criteria, log=lambda m: None) -
         return STATUS_SKIPPED
 
     _dismiss_popup(page)
+    _select_resume(page, crit.resume_name, log)  # выбрать нужное резюме, если их несколько
 
     # Подтверждение отклика (создаётся самим кликом «Откликнуться») ДО доставки
     # письма: фолбэк-чат уводит на страницу «Отклики», поэтому сперва убеждаемся,

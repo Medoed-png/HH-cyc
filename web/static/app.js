@@ -16,6 +16,19 @@ function api(path, body) {
   });
 }
 
+// Значения отмеченных чекбоксов внутри контейнера по id.
+function checkedValues(containerId) {
+  return Array.from($(containerId).querySelectorAll("input[type=checkbox]:checked"))
+    .map(c => c.value);
+}
+// Отметить чекбоксы контейнера по массиву значений.
+function setChecks(containerId, values) {
+  const set = new Set(values || []);
+  $(containerId).querySelectorAll("input[type=checkbox]").forEach(c => {
+    c.checked = set.has(c.value);
+  });
+}
+
 function collectForm() {
   return {
     professions: $("professions").value,
@@ -27,6 +40,10 @@ function collectForm() {
     cover_letter: $("cover_letter").value,
     daily_limit: $("daily_limit").value,
     max_pages: $("max_pages").value,
+    experience: $("experience").value,
+    employment: checkedValues("employment"),
+    schedule: checkedValues("schedule"),
+    company_blacklist: $("company_blacklist").value,
   };
 }
 
@@ -47,9 +64,12 @@ async function loadConfig() {
   const cfg = await (await authFetch("/api/config?site=" + currentSite)).json();
   for (const k of ["professions", "region", "salary_min", "exclude_words",
                    "include_words", "resume_name", "cover_letter",
-                   "daily_limit", "max_pages"]) {
+                   "daily_limit", "max_pages", "experience",
+                   "company_blacklist"]) {
     if ($(k) && cfg[k] != null) $(k).value = cfg[k];
   }
+  setChecks("employment", cfg.employment);
+  setChecks("schedule", cfg.schedule);
   $("salary_min").value = groupDigits($("salary_min").value);
 }
 

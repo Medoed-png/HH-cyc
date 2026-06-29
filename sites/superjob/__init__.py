@@ -90,7 +90,10 @@ class SuperJobAdapter(SiteAdapter):
         )
 
     def search(self, page: Page, query: str, region: str, max_pages: int,
-               log: Log = lambda m: None) -> list[Vacancy]:
+               log: Log = lambda m: None, experience: str = "",
+               employment: list | None = None, schedule: list | None = None
+               ) -> list[Vacancy]:
+        # Фильтры опыта/занятости/графика для SuperJob пока не поддержаны (best-effort).
         found: list[Vacancy] = []
         for page_num in range(max_pages):
             url = self._build_search_url(query, page_num)

@@ -301,7 +301,9 @@ class BrowserSession(threading.Thread):
             antiban.rate_limit(self.user_id)  # разнести запросы во времени
             self._log(f"Поиск: {text}")
             found = self.adapter.search(
-                br.page, text, crit.region, crit.max_pages, log=self._log
+                br.page, text, crit.region, crit.max_pages, log=self._log,
+                experience=crit.experience, employment=crit.employment,
+                schedule=crit.schedule,
             )
             all_found.extend(found)
         self._log(f"Всего найдено: {len(all_found)}")

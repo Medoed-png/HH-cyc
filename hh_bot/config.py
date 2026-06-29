@@ -33,6 +33,15 @@ class Criteria:
     max_pages: int = 5
     # Строгий отбор: показывать только вакансии, где профессия/стек есть в названии.
     strict_title_match: bool = True
+    # Фильтры поиска (коды hh.ru; пусто = не фильтровать). experience — одно
+    # значение (noExperience/between1And3/between3And6/moreThan6); employment и
+    # schedule — списки (full/part/project/volunteer/probation; fullDay/shift/
+    # flexible/remote/flyInFlyOut). Интерпретирует адаптер сайта.
+    experience: str = ""
+    employment: list = field(default_factory=list)
+    schedule: list = field(default_factory=list)
+    # Чёрный список компаний: вакансии этих работодателей пропускаем.
+    company_blacklist: list = field(default_factory=list)
 
     @property
     def profession_texts(self) -> list:
@@ -154,4 +163,18 @@ def from_form(data: dict, base: Criteria | None = None) -> Criteria:
     crit.cover_letter = (data.get("cover_letter") or "").strip()
     crit.daily_limit = _to_int(data.get("daily_limit", 150), 150)
     crit.max_pages = _to_int(data.get("max_pages", 5), 5)
+
+    # Фильтры поиска. experience — строка; employment/schedule — списки кодов
+    # (из формы приходят строкой через запятую или списком); blacklist — список.
+    crit.experience = (data.get("experience") or "").strip()
+    crit.employment = _as_list(data.get("employment"))
+    crit.schedule = _as_list(data.get("schedule"))
+    crit.company_blacklist = _split(data.get("company_blacklist", ""))
     return crit
+
+
+def _as_list(value) -> list:
+    """Привести значение формы к списку непустых строк (список или строка с запятыми)."""
+    if isinstance(value, list):
+        return [str(x).strip() for x in value if str(x).strip()]
+    return _split(value or "")

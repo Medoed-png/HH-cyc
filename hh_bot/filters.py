@@ -95,6 +95,12 @@ def match(vacancy: Vacancy, crit: Criteria, storage: Storage) -> tuple[bool, str
         if not title_matches_profession(vacancy.title, vacancy.profession):
             return False, "название не совпадает с профессией"
 
+    # Чёрный список компаний (вакансии этих работодателей пропускаем).
+    company_lower = (vacancy.company or "").lower()
+    for company in getattr(crit, "company_blacklist", []):
+        if company and company.lower() in company_lower:
+            return False, f"компания в чёрном списке: {company}"
+
     # Запрещённые слова.
     for word in crit.exclude_words:
         if word and word.lower() in title_lower:

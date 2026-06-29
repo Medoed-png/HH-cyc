@@ -192,8 +192,12 @@ class HHAdapter(SiteAdapter):
 
     # --- поиск ---
     def search(self, page: Page, query: str, region: str, max_pages: int,
-               log: Log = lambda m: None) -> list[Vacancy]:
-        found = _search.search(page, query, region, max_pages, log=log)
+               log: Log = lambda m: None, experience: str = "",
+               employment: list | None = None, schedule: list | None = None
+               ) -> list[Vacancy]:
+        found = _search.search(page, query, region, max_pages, log=log,
+                               experience=experience, employment=employment,
+                               schedule=schedule)
         for v in found:
             v.site = self.site_id
         return found

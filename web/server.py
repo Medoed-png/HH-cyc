@@ -172,6 +172,12 @@ def api_config(request: Request, user: User = Depends(current_user)):
         "cover_letter": crit.cover_letter,
         "daily_limit": crit.daily_limit,
         "max_pages": crit.max_pages,
+        # Фильтры поиска: experience — строка, employment/schedule — списки кодов,
+        # company_blacklist — строка через запятую (как exclude_words).
+        "experience": crit.experience,
+        "employment": crit.employment,
+        "schedule": crit.schedule,
+        "company_blacklist": ", ".join(crit.company_blacklist),
     }
 
 

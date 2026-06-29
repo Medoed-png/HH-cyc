@@ -86,8 +86,14 @@ class SiteAdapter(ABC):
     # --- поиск ---
     @abstractmethod
     def search(self, page: "Page", query: str, region: str, max_pages: int,
-               log: Log = lambda m: None) -> list["Vacancy"]:
-        """Найти вакансии по одному запросу. site у вакансий проставляет адаптер."""
+               log: Log = lambda m: None, experience: str = "",
+               employment: list | None = None, schedule: list | None = None
+               ) -> list["Vacancy"]:
+        """Найти вакансии по одному запросу. site у вакансий проставляет адаптер.
+
+        experience/employment/schedule — необязательные фильтры (коды сайта); сайт
+        вправе их игнорировать, если не поддерживает.
+        """
 
     # --- отклик ---
     @abstractmethod

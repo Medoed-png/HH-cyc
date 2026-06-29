@@ -10,8 +10,14 @@ from . import selectors
 from .models import Vacancy
 
 
-def build_search_url(text: str, region: int, page: int = 0) -> str:
-    """Построить URL поиска hh.ru для одного запроса и номера страницы."""
+def build_search_url(text: str, region: int, page: int = 0,
+                     experience: str = "", employment=None, schedule=None) -> str:
+    """Построить URL поиска hh.ru для одного запроса и номера страницы.
+
+    experience — одно значение (или пусто); employment/schedule — списки кодов
+    hh.ru (или пусто). Пустые фильтры в URL не добавляются. Списки кодируются
+    повторяющимися параметрами (doseq) — hh.ru понимает несколько значений.
+    """
     params = {
         "text": text,
         "area": region,
@@ -19,7 +25,13 @@ def build_search_url(text: str, region: int, page: int = 0) -> str:
         "items_on_page": 50,
         "order_by": "publication_time",
     }
-    return selectors.SEARCH_URL + "?" + urlencode(params)
+    if experience:
+        params["experience"] = experience
+    if employment:
+        params["employment"] = list(employment)
+    if schedule:
+        params["schedule"] = list(schedule)
+    return selectors.SEARCH_URL + "?" + urlencode(params, doseq=True)
 
 
 def _extract_vacancy_id(url: str) -> str:
@@ -102,11 +114,13 @@ def parse_cards(page: Page, profession: str) -> list[Vacancy]:
 
 
 def search(page: Page, text: str, region: int, max_pages: int = 5,
-           log=lambda m: None) -> list[Vacancy]:
+           log=lambda m: None, experience: str = "", employment=None,
+           schedule=None) -> list[Vacancy]:
     """Обойти страницы выдачи по одному запросу и вернуть все вакансии."""
     found: list[Vacancy] = []
     for page_num in range(max_pages):
-        url = build_search_url(text, region, page_num)
+        url = build_search_url(text, region, page_num, experience=experience,
+                               employment=employment, schedule=schedule)
         log(f"  Загружаю страницу {page_num + 1}: {text}")
         page.goto(url, wait_until="domcontentloaded")
         page.wait_for_timeout(1500)  # дать догрузиться JS-выдаче
