@@ -17,8 +17,9 @@
   </header>
 
   <main class="content">
-    <!-- Подключение аккаунта hh.ru (серверный логин) -->
-    <section class="card" id="connect-card">
+    <!-- Подключение аккаунта hh.ru (серверный логин). Скрыта по умолчанию —
+         показывается только если пользователь ещё не вошёл (см. setStatus). -->
+    <section class="card" id="connect-card" style="display:none">
       <div class="card-head">
         <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Подключение аккаунта hh.ru</h2></div>
         <span id="conn-badge" class="badge b-gray">не подключён</span>

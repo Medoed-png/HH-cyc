@@ -336,6 +336,11 @@ function setStatus(loggedIn) {
   const el = $("status");
   el.className = "status " + (loggedIn ? "ok" : "bad");
   el.textContent = loggedIn ? "● вы вошли" : "● не авторизованы";
+  // Карточка подключения нужна только когда пользователь НЕ вошёл. Если он уже
+  // залогинен (например, по сохранённым cookies) — прячем, чтобы не сбивать
+  // повторным вводом логина/пароля от hh.ru.
+  const card = $("connect-card");
+  if (card) card.style.display = loggedIn ? "none" : "";
 }
 
 // ---------- сворачивание разделов ----------
