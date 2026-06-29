@@ -23,6 +23,8 @@ import os
 
 from playwright.sync_api import sync_playwright, Page, BrowserContext
 
+from . import antiban
+
 # Папка с пользовательскими данными браузера по умолчанию (одиночный режим).
 # В мультипользовательском режиме передаётся свой профиль на (user, site).
 USER_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".browser_profile")
@@ -51,12 +53,13 @@ class Browser:
         """Запустить браузер, восстановить cookies и вернуть рабочую вкладку."""
         os.makedirs(self.user_data_dir, exist_ok=True)
         self._pw = sync_playwright().start()
+        # Анти-бан: реалистичные UA/локаль/таймзона, джиттер вьюпорта, stealth-флаги.
         self.context = self._pw.chromium.launch_persistent_context(
             self.user_data_dir,
             headless=self.headless,
-            viewport={"width": 1280, "height": 900},
-            args=["--disable-blink-features=AutomationControlled"],
+            **antiban.context_options(),
         )
+        antiban.apply_stealth(self.context)  # маскировка navigator.webdriver и т.п.
         self._restore_cookies()
         self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
         return self.page

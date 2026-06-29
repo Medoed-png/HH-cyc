@@ -11,6 +11,7 @@ from typing import Callable
 
 from playwright.sync_api import Page
 
+from hh_bot import antiban
 from hh_bot import selectors
 from hh_bot import search as _search
 from hh_bot import applier as _applier
@@ -113,7 +114,9 @@ class HHAdapter(SiteAdapter):
             # hh.ru мог отправить код сразу: проверим шаг кода ниже.
         else:
             try:
-                page.locator(selectors.LOGIN_PASSWORD_INPUT).first.fill(password, timeout=6000)
+                antiban.human_type(
+                    page, page.locator(selectors.LOGIN_PASSWORD_INPUT).first, password
+                )
             except Exception:  # noqa: BLE001
                 return LoginResult(LoginStatus.FAILED, "не удалось ввести пароль")
 
@@ -135,7 +138,9 @@ class HHAdapter(SiteAdapter):
                 return LoginResult(LoginStatus.OK)
             return LoginResult(LoginStatus.FAILED, "поле кода не найдено")
         try:
-            page.locator(selectors.LOGIN_CODE_INPUT).first.fill(code, timeout=6000)
+            antiban.human_type(
+                page, page.locator(selectors.LOGIN_CODE_INPUT).first, code
+            )
         except Exception:  # noqa: BLE001
             return LoginResult(LoginStatus.FAILED, "не удалось ввести код")
         # Часть форм отправляет код автоматически; иначе жмём кнопку.

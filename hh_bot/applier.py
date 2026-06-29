@@ -7,6 +7,7 @@ import time
 
 from playwright.sync_api import Frame, Page
 
+from . import antiban
 from . import selectors
 from .config import Criteria
 from .models import Vacancy, STATUS_APPLIED, STATUS_SKIPPED, STATUS_ERROR
@@ -263,8 +264,7 @@ def _send_letter_via_chat(page: Page, vacancy_id: str, text: str, log) -> bool:
         return True
 
     try:
-        box.click()
-        box.fill(text)
+        antiban.human_type(page, box, text)  # посимвольный ввод письма
     except Exception as e:  # noqa: BLE001
         log(f"  не удалось вписать письмо в чат: {e}")
         return False
@@ -274,7 +274,7 @@ def _send_letter_via_chat(page: Page, vacancy_id: str, text: str, log) -> bool:
         log("  кнопка отправки в чате не найдена")
         return False
     try:
-        send.click()
+        antiban.human_click(page, send)
     except Exception as e:  # noqa: BLE001
         log(f"  не удалось отправить письмо в чат: {e}")
         return False
@@ -331,7 +331,7 @@ def apply_to(page: Page, vacancy: Vacancy, crit: Criteria, log=lambda m: None) -
         vacancy.note = "кнопка отклика не найдена"  # внешние вакансии (Пятёрочка)
         return STATUS_SKIPPED
 
-    respond_btn.click()
+    antiban.human_click(page, respond_btn)  # подвод курсора кривой + клик
     page.wait_for_timeout(_WAIT_ACTION)
 
     if _has_captcha(page):
