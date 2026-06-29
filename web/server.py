@@ -1,9 +1,8 @@
 """Веб-интерфейс HH-бота на FastAPI (ASGI) поверх Python-бэкенда.
 
-Порт с Flask на FastAPI/uvicorn (M3a): поведение прежнее — те же эндпоинты,
-статика и поток событий (SSE). ASGI выбран ради аутентификации/скоупинга через
-зависимости (M3b) и масштабируемого SSE в облаке (M4). Логин на hh.ru и парсинг —
-как и раньше, через рабочий поток Worker (Playwright).
+Порт с Flask на FastAPI/uvicorn (M3a): те же эндпоинты, статика и поток событий
+(SSE). ASGI выбран ради аутентификации/скоупинга через зависимости (M3b). Логин
+на hh.ru и парсинг — через per-user сессии браузера в пуле SessionManager (M4).
 """
 from __future__ import annotations
 
@@ -11,6 +10,7 @@ import json
 import os
 import queue
 import threading
+import time
 import webbrowser
 
 import uvicorn
@@ -233,10 +233,27 @@ def api_events(user: User = Depends(current_user)):
     return StreamingResponse(stream(), media_type="text/event-stream")
 
 
+def _open_browser_when_ready(url: str) -> None:
+    """Открыть браузер ТОЛЬКО когда сервер реально начал отвечать.
+
+    Иначе автооткрытая вкладка успевает попасть в окно до того, как uvicorn занял
+    порт, и показывает «не удаётся установить соединение». Поллим, пока сервер не
+    ответит (до ~30 c), затем открываем.
+    """
+    import urllib.request
+    for _ in range(60):
+        try:
+            urllib.request.urlopen(url, timeout=1)
+            break
+        except Exception:  # noqa: BLE001 — сервер ещё поднимается
+            time.sleep(0.5)
+    webbrowser.open(url)
+
+
 def main() -> None:
     url = "http://127.0.0.1:8000"
     print(f"HH-бот: откройте {url}")
-    threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    threading.Thread(target=_open_browser_when_ready, args=(url,), daemon=True).start()
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")
 
 
