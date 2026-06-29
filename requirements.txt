@@ -2,3 +2,4 @@ playwright>=1.44
 PyYAML>=6.0
 certifi>=2024.0.0
 flask
+SQLAlchemy>=2.0

@@ -32,11 +32,12 @@ class Worker(threading.Thread):
         self.events: queue.Queue = queue.Queue()
         self._stop_apply = threading.Event()
         self._browser: Browser | None = None
-        self._storage = Storage()
         self._running = True
         self._last_suitable: list | None = None  # найденные вакансии для откликов
         # Адаптер сайта: вся специфика hh.ru/других сайтов — за ним.
         self.adapter = get_adapter(site_id)
+        # История откликов в рамках (user_id, site_id). user_id=0 до M3 (вход).
+        self._storage = Storage(user_id=0, site_id=self.adapter.site_id)
 
     # --- API для GUI (потокобезопасно через очередь) ---
     def submit(self, name: str, **kwargs) -> None:

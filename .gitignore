@@ -8,8 +8,10 @@ venv/
 # Сессия браузера Playwright (логин/cookies) — личное, не коммитим
 .browser_profile/
 
-# Локальная история откликов
+# Локальная история откликов / БД приложения
 history.db
+*.db
+app.db
 
 # ОС
 .DS_Store
