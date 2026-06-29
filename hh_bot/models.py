@@ -13,7 +13,7 @@ STATUS_ERROR = "ошибка"
 
 @dataclass
 class Vacancy:
-    """Одна вакансия, распарсенная из выдачи hh.ru."""
+    """Одна вакансия, распарсенная из выдачи сайта поиска работы."""
 
     vacancy_id: str
     title: str
@@ -24,6 +24,7 @@ class Vacancy:
     profession: str = ""      # по какому поисковому запросу найдена
     status: str = STATUS_FOUND
     note: str = ""            # причина пропуска / текст ошибки
+    site: str = "hh"          # id сайта-источника (адаптер), напр. "hh", "superjob"
 
     def to_dict(self) -> dict:
         """Сериализация для веб-интерфейса (JSON)."""
@@ -36,4 +37,5 @@ class Vacancy:
             "status": self.status,
             "note": self.note,
             "profession": self.profession,
+            "site": self.site,
         }

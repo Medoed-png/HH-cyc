@@ -2,6 +2,9 @@
 
 Используется persistent context: сессия (cookies, логин) сохраняется на диске
 между запусками, поэтому логиниться руками нужно только один раз.
+
+Browser — site-agnostic лаунчер вкладки. Специфика входа на конкретный сайт
+(детект логина, страница входа) живёт в адаптере сайта (SiteAdapter), а не здесь.
 """
 from __future__ import annotations
 
@@ -9,9 +12,7 @@ import os
 
 from playwright.sync_api import sync_playwright, Page, BrowserContext
 
-from . import selectors
-
-# Папка с пользовательскими данными браузера (сессия hh.ru).
+# Папка с пользовательскими данными браузера (сессия сайта).
 USER_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".browser_profile")
 
 
@@ -35,26 +36,6 @@ class Browser:
         )
         self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
         return self.page
-
-    def is_logged_in(self) -> bool:
-        """Проверить, что пользователь авторизован на hh.ru.
-
-        Надёжный способ: открыть страницу, требующую входа (/applicant/resumes).
-        Гостя hh.ru редиректит на /account/login, авторизованного — оставляет.
-        """
-        if self.page is None:
-            return False
-        self.page.goto(selectors.BASE + "/applicant/resumes",
-                       wait_until="domcontentloaded")
-        self.page.wait_for_timeout(800)
-        url = self.page.url
-        return "/account/login" not in url and "/auth/" not in url
-
-    def open_login(self) -> None:
-        """Открыть страницу входа для ручной авторизации (капча/2FA проходятся руками)."""
-        if self.page is None:
-            self.start()
-        self.page.goto(selectors.BASE + "/account/login", wait_until="domcontentloaded")
 
     def close(self) -> None:
         if self.context is not None:

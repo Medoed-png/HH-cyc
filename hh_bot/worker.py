@@ -10,11 +10,9 @@ import threading
 
 from .browser import Browser
 from .config import Criteria
-from . import search as search_mod
 from . import filters
-from . import applier
-from . import responses as responses_mod
 from .storage import Storage
+from sites import get_adapter, DEFAULT_SITE
 
 # Типы событий, отправляемых в GUI.
 EV_LOG = "log"              # payload: str
@@ -28,7 +26,7 @@ EV_DONE = "done"            # payload: str (что завершилось)
 class Worker(threading.Thread):
     """Поток-исполнитель команд браузера."""
 
-    def __init__(self):
+    def __init__(self, site_id: str = DEFAULT_SITE):
         super().__init__(daemon=True)
         self.commands: queue.Queue = queue.Queue()
         self.events: queue.Queue = queue.Queue()
@@ -37,6 +35,8 @@ class Worker(threading.Thread):
         self._storage = Storage()
         self._running = True
         self._last_suitable: list | None = None  # найденные вакансии для откликов
+        # Адаптер сайта: вся специфика hh.ru/других сайтов — за ним.
+        self.adapter = get_adapter(site_id)
 
     # --- API для GUI (потокобезопасно через очередь) ---
     def submit(self, name: str, **kwargs) -> None:
@@ -82,18 +82,18 @@ class Worker(threading.Thread):
 
     def _cmd_login(self) -> None:
         br = self._ensure_browser()
-        if br.is_logged_in():
-            self._log("Вы уже авторизованы на hh.ru.")
+        if self.adapter.is_logged_in(br.page):
+            self._log(f"Вы уже авторизованы на {self.adapter.display_name}.")
             self.events.put((EV_LOGIN, True))
         else:
             self._log("Открываю страницу входа. Войдите вручную в окне браузера.")
-            br.open_login()
+            self.adapter.open_manual_login(br.page)
             self.events.put((EV_LOGIN, False))
         self.events.put((EV_DONE, "login"))
 
     def _cmd_check_login(self) -> None:
         br = self._ensure_browser()
-        logged = br.is_logged_in()
+        logged = self.adapter.is_logged_in(br.page)
         self._log("Авторизация подтверждена." if logged else "Вы ещё не вошли.")
         self.events.put((EV_LOGIN, logged))
         self.events.put((EV_DONE, "check_login"))
@@ -101,13 +101,13 @@ class Worker(threading.Thread):
     def _do_search(self, crit: Criteria) -> list:
         """Найти и отфильтровать вакансии, вывести подходящие в таблицу."""
         br = self._ensure_browser()
-        if not br.is_logged_in():
-            self._log("Сначала войдите на hh.ru (кнопка «Войти»).")
+        if not self.adapter.is_logged_in(br.page):
+            self._log(f"Сначала войдите на {self.adapter.display_name} (кнопка «Войти»).")
             return []
         all_found = []
         for text in crit.profession_texts:
             self._log(f"Поиск: {text}")
-            found = search_mod.search(
+            found = self.adapter.search(
                 br.page, text, crit.region, crit.max_pages, log=self._log
             )
             all_found.extend(found)
@@ -127,12 +127,12 @@ class Worker(threading.Thread):
     def _cmd_responses(self) -> None:
         """Собрать ответы работодателей и отправить их в интерфейс."""
         br = self._ensure_browser()
-        if not br.is_logged_in():
-            self._log("Сначала войдите на hh.ru (кнопка «Войти»).")
+        if not self.adapter.is_logged_in(br.page):
+            self._log(f"Сначала войдите на {self.adapter.display_name} (кнопка «Войти»).")
             self.events.put((EV_DONE, "responses"))
             return
         self._log("Загружаю ответы на отклики…")
-        result = responses_mod.fetch_responses(br.page, log=self._log)
+        result = self.adapter.fetch_responses(br.page, log=self._log)
         # Заносим все текущие отклики с hh.ru в память, чтобы бот не открывал
         # их повторно при поиске.
         import re
@@ -151,11 +151,11 @@ class Worker(threading.Thread):
     def _cmd_chat(self, vacancy_id: str) -> None:
         """Прочитать чат одной вакансии по требованию."""
         br = self._ensure_browser()
-        if not br.is_logged_in():
-            self._log("Сначала войдите на hh.ru (кнопка «Войти»).")
+        if not self.adapter.is_logged_in(br.page):
+            self._log(f"Сначала войдите на {self.adapter.display_name} (кнопка «Войти»).")
             self.events.put((EV_CHAT, {"vacancy_id": vacancy_id, "messages": []}))
             return
-        msgs = responses_mod.fetch_chat(br.page, vacancy_id, log=self._log)
+        msgs = self.adapter.fetch_chat(br.page, vacancy_id, log=self._log)
         self.events.put((EV_CHAT, {"vacancy_id": vacancy_id, "messages": msgs}))
         self.events.put((EV_DONE, "chat"))
 
@@ -179,7 +179,7 @@ class Worker(threading.Thread):
         self._log(f"Сопроводительное письмо: "
                   f"{('«' + letter[:40] + '…»') if letter else 'ПУСТО (не задано)'}")
 
-        count = applier.run_applications(
+        count = self.adapter.run_applications(
             self._ensure_browser().page,
             suitable,
             crit,
