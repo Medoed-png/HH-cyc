@@ -13,5 +13,13 @@ history.db
 *.db
 app.db
 
+# Секрет подписи JWT (генерируется локально)
+.jwt_secret
+
+# Временные файлы запуска
+scratch_*
+*.out
+*.err
+
 # ОС
 .DS_Store

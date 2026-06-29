@@ -36,6 +36,20 @@ class Base(DeclarativeBase):
     pass
 
 
+class User(Base):
+    """Пользователь сервиса (вход в само приложение, не в hh.ru)."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+    status: Mapped[str] = mapped_column(String(16), default="active")
+
+
 class AppliedHistory(Base):
     """История откликов с привязкой к пользователю и сайту (дедуп + дневной лимит)."""
 

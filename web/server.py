@@ -14,14 +14,17 @@ import threading
 import webbrowser
 
 import uvicorn
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from hh_bot import config as config_mod
 from hh_bot.cities_list import CITIES
+from hh_bot.db import User
 from hh_bot.suggest import fetch_suggestions
 from hh_bot.worker import (Worker, EV_LOG, EV_LOGIN, EV_VACANCY, EV_RESPONSES, EV_CHAT)
+from web import auth
+from web.auth import current_user
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
@@ -76,9 +79,45 @@ def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
-# ---------- API ----------
+@app.get("/login")
+def login_page():
+    return FileResponse(os.path.join(STATIC_DIR, "login.html"))
+
+
+# ---------- аутентификация ----------
+@app.post("/auth/register")
+def auth_register(data: auth.RegisterIn):
+    if auth.get_user_by_email(data.email):
+        return JSONResponse({"error": "Пользователь с таким email уже есть"},
+                            status_code=409)
+    user = auth.create_user(data.email, data.password)
+    return {"token": auth.create_access_token(user.id),
+            "user": {"id": user.id, "email": user.email}}
+
+
+@app.post("/auth/login")
+def auth_login(data: auth.LoginIn):
+    user = auth.get_user_by_email(data.email)
+    if user is None or not auth.verify_password(user.password_hash, data.password):
+        return JSONResponse({"error": "Неверный email или пароль"}, status_code=401)
+    return {"token": auth.create_access_token(user.id),
+            "user": {"id": user.id, "email": user.email}}
+
+
+@app.post("/auth/logout")
+def auth_logout(user: User = Depends(current_user)):
+    # Stateless-токен: клиент просто забывает его. Отзыв сессий — позже.
+    return {"ok": True}
+
+
+@app.get("/auth/me")
+def auth_me(user: User = Depends(current_user)):
+    return {"id": user.id, "email": user.email}
+
+
+# ---------- API (требуют входа) ----------
 @app.get("/api/config")
-def api_config():
+def api_config(user: User = Depends(current_user)):
     """Текущие критерии для заполнения формы."""
     crit = config_mod.load()
     region_name = {v: k for k, v in CITIES.items()}.get(str(crit.region), "Россия")
@@ -96,59 +135,59 @@ def api_config():
 
 
 @app.post("/api/save")
-async def api_save(request: Request):
+async def api_save(request: Request, user: User = Depends(current_user)):
     crit = config_mod.from_form(await request.json())
     config_mod.save(crit)
     return {"ok": True}
 
 
 @app.post("/api/login")
-def api_login():
+def api_login(user: User = Depends(current_user)):
     worker.submit("login")
     return {"ok": True}
 
 
 @app.post("/api/search")
-async def api_search(request: Request):
+async def api_search(request: Request, user: User = Depends(current_user)):
     crit = config_mod.from_form(await request.json())
     worker.submit("search", crit=crit)
     return {"ok": True}
 
 
 @app.post("/api/apply")
-async def api_apply(request: Request):
+async def api_apply(request: Request, user: User = Depends(current_user)):
     crit = config_mod.from_form(await request.json())
     worker.submit("apply", crit=crit)
     return {"ok": True}
 
 
 @app.post("/api/stop")
-def api_stop():
+def api_stop(user: User = Depends(current_user)):
     worker.request_stop_apply()
     return {"ok": True}
 
 
 @app.post("/api/responses")
-def api_responses():
+def api_responses(user: User = Depends(current_user)):
     worker.submit("responses")
     return {"ok": True}
 
 
 @app.post("/api/chat")
-async def api_chat(request: Request):
+async def api_chat(request: Request, user: User = Depends(current_user)):
     vacancy_id = str((await request.json()).get("vacancy_id", ""))
     worker.submit("chat", vacancy_id=vacancy_id)
     return {"ok": True}
 
 
 @app.get("/api/suggest")
-def api_suggest(text: str = ""):
+def api_suggest(text: str = "", user: User = Depends(current_user)):
     """Подсказки профессий (проксируем hh.ru, чтобы обойти CORS в браузере)."""
     return fetch_suggestions(text)
 
 
 @app.get("/api/cities")
-def api_cities(q: str = ""):
+def api_cities(q: str = "", user: User = Depends(current_user)):
     """Подсказки городов из справочника по началу слова / вхождению."""
     q = (q or "").strip().lower()
     if not q:
@@ -164,9 +203,10 @@ def api_cities(q: str = ""):
 
 
 @app.get("/api/events")
-def api_events():
+def api_events(user: User = Depends(current_user)):
     """Поток событий (Server-Sent Events) для обновлений в реальном времени.
 
+    Токен приходит в query (?token=), т.к. EventSource не умеет заголовки.
     Синхронный генератор: Starlette крутит его в пуле потоков, поэтому блокирующее
     ожидание очереди не мешает остальным запросам.
     """
