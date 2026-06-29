@@ -287,6 +287,35 @@ function onChatLoaded(vacancyId, messages) {
   if (panel && r) buildMessages(panel, messages, r.url);
 }
 
+// ---------- подключение аккаунта hh.ru ----------
+const CONN_LABELS = {
+  connected: ["● подключён", "b-green"],
+  needs_sms: ["● нужен код из SMS", "b-blue"],
+  needs_captcha: ["● нужна капча", "b-red"],
+  invalid: ["не подключён", "b-gray"],
+};
+
+function renderConnStatus(st) {
+  const badge = $("conn-badge");
+  const [text, cls] = CONN_LABELS[st.status] || CONN_LABELS.invalid;
+  badge.className = "badge " + cls;
+  badge.textContent = text;
+  if (st.username && !$("hh-username").value) $("hh-username").value = st.username;
+  // Поле кода и кнопка «Отправить код» — только когда сайт запросил код.
+  const needSms = st.status === "needs_sms";
+  $("sms-label").style.display = needSms ? "" : "none";
+  $("sms-field").style.display = needSms ? "" : "none";
+  $("btn-send-sms").style.display = needSms ? "" : "none";
+  if (needSms) $("hh-sms").focus();
+}
+
+async function loadConnStatus() {
+  try {
+    const st = await (await authFetch("/api/conn_status")).json();
+    renderConnStatus(st);
+  } catch (e) { /* не критично */ }
+}
+
 // ---------- поток событий (SSE) ----------
 function connectEvents() {
   // Токен в query: EventSource не умеет слать заголовок Authorization.
@@ -298,6 +327,7 @@ function connectEvents() {
     else if (msg.type === "vacancy") upsertVacancy(msg.vacancy);
     else if (msg.type === "responses") renderResponses(msg.items, msg.unread || 0);
     else if (msg.type === "chat") onChatLoaded(msg.vacancy_id, msg.messages);
+    else if (msg.type === "conn_status") renderConnStatus(msg);
   };
   es.onerror = () => logLine("Соединение с сервером прервано, переподключаюсь…");
 }
@@ -370,6 +400,26 @@ function bindButtons() {
     logLine("Открываю окно браузера…");
     api("/api/show_browser");
   };
+  $("btn-connect").onclick = () => {
+    const username = $("hh-username").value.trim();
+    const password = $("hh-password").value;
+    if (!username || !password) { logLine("Укажите логин и пароль hh.ru."); return; }
+    logLine("Подключаю аккаунт hh.ru…");
+    api("/api/connect", { username, password });
+  };
+  $("btn-send-sms").onclick = () => {
+    const code = $("hh-sms").value.trim();
+    if (!code) { logLine("Введите код из SMS/письма."); return; }
+    logLine("Отправляю код подтверждения…");
+    api("/api/sms", { code });
+  };
+  $("btn-disconnect").onclick = async () => {
+    await api("/api/disconnect");
+    $("hh-password").value = "";
+    $("hh-sms").value = "";
+    logLine("Аккаунт hh.ru отключён.");
+    loadConnStatus();
+  };
   $("btn-save").onclick = async () => { await api("/api/save", collectForm()); logLine("Критерии сохранены."); };
 
   $("salary_min").addEventListener("input", (e) => {
@@ -393,6 +443,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   bindModal();
   bindCollapsibles();
   connectEvents();
+  loadConnStatus();                          // статус подключения аккаунта hh.ru
   api("/api/check_login").catch(() => {});  // обновит бейдж статуса входа
   bindAutoLogin();
 });

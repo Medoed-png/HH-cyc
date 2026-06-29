@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from hh_bot import config as config_mod
+from hh_bot import credentials as creds_mod
 from hh_bot.cities_list import CITIES
 from hh_bot.db import User
 from hh_bot.suggest import fetch_suggestions
@@ -39,6 +40,11 @@ _MAJOR_CITIES = {
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # При старте: создать схему БД (идемпотентно) до обслуживания запросов, иначе
+    # эндпоинты подключения аккаунта могут обратиться к таблице раньше, чем её
+    # создаст ленивая инициализация в Storage (первая сессия).
+    from hh_bot.db import init_db
+    init_db()
     yield
     # При остановке: корректно закрыть все сессии, чтобы сохранились cookies (вход).
     manager.shutdown_all()
@@ -166,6 +172,43 @@ def api_check_login(user: User = Depends(current_user)):
 def api_show_browser(user: User = Depends(current_user)):
     """Показать видимое окно браузера (для капчи/ручных действий)."""
     manager.submit(user.id, "hh", "show_browser")
+    return {"ok": True}
+
+
+# ---------- подключение аккаунта сайта (серверный логин, M5) ----------
+@app.get("/api/conn_status")
+def api_conn_status(user: User = Depends(current_user)):
+    """Статус подключения аккаунта hh.ru (без пароля)."""
+    return creds_mod.status(user.id, "hh")
+
+
+@app.post("/api/connect")
+async def api_connect(request: Request, user: User = Depends(current_user)):
+    """Сохранить (зашифровав) логин/пароль и запустить серверный вход."""
+    data = await request.json()
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    if not username or not password:
+        return JSONResponse({"error": "Укажите логин и пароль"}, status_code=400)
+    creds_mod.store(user.id, "hh", username, password, status=creds_mod.STATUS_INVALID)
+    manager.submit(user.id, "hh", "connect")
+    return {"ok": True}
+
+
+@app.post("/api/sms")
+async def api_sms(request: Request, user: User = Depends(current_user)):
+    """Передать код подтверждения (SMS/письмо) для завершения входа."""
+    code = str((await request.json()).get("code", "")).strip()
+    if not code:
+        return JSONResponse({"error": "Введите код"}, status_code=400)
+    manager.submit(user.id, "hh", "submit_sms", code=code)
+    return {"ok": True}
+
+
+@app.post("/api/disconnect")
+def api_disconnect(user: User = Depends(current_user)):
+    """Удалить сохранённые креды (отключить аккаунт)."""
+    creds_mod.delete(user.id, "hh")
     return {"ok": True}
 
 

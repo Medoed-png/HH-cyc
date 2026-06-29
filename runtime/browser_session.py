@@ -16,8 +16,10 @@ import time
 from hh_bot.browser import Browser
 from hh_bot.config import Criteria
 from hh_bot import filters
+from hh_bot import credentials
 from hh_bot.storage import Storage
 from sites import get_adapter
+from sites.base import LoginStatus
 
 # Типы событий, отправляемых в UI (через SessionManager -> per-user SSE).
 EV_LOG = "log"              # payload: str
@@ -25,6 +27,7 @@ EV_LOGIN = "login"          # payload: bool (залогинен ли)
 EV_VACANCY = "vacancy"      # payload: Vacancy (новая/обновлённая)
 EV_RESPONSES = "responses"  # payload: dict {items, unread}
 EV_CHAT = "chat"            # payload: dict {vacancy_id, messages}
+EV_CONN = "conn_status"     # payload: dict (credentials.status: статус подключения аккаунта)
 EV_DONE = "done"            # payload: str (что завершилось)
 
 # Корень для пользовательских профилей браузера.
@@ -168,6 +171,69 @@ class BrowserSession(threading.Thread):
             pass
         self._log("Окно браузера открыто. Можно пройти капчу или действия вручную.")
         self.events.put((EV_DONE, "show_browser"))
+
+    # --- серверный логин по логину/паролю + код (M5b) ---
+    def _emit_conn(self) -> None:
+        """Отправить в UI текущий статус подключения аккаунта (без пароля)."""
+        self.events.put((EV_CONN, credentials.status(self.user_id, self.site_id)))
+
+    def _handle_login_result(self, result) -> None:
+        """Обработать LoginResult: обновить статус кред, события, скрыть окно при успехе."""
+        st = result.status
+        if st == LoginStatus.OK:
+            credentials.set_status(self.user_id, self.site_id,
+                                   credentials.STATUS_CONNECTED, logged_in=True)
+            self._persist_cookies()
+            self._go_background()  # автологин шёл в фоне; окна и не было, но на всякий
+            self.events.put((EV_LOGIN, True))
+        elif st == LoginStatus.SMS_REQUIRED:
+            # Страница оставлена на шаге кода; ждём команду submit_sms (не блокируем поток).
+            credentials.set_status(self.user_id, self.site_id, credentials.STATUS_NEEDS_SMS)
+        elif st == LoginStatus.CAPTCHA_REQUIRED:
+            credentials.set_status(self.user_id, self.site_id, credentials.STATUS_NEEDS_CAPTCHA)
+            self._log("Нужна капча: нажмите «Показать окно браузера» и пройдите её вручную.")
+        else:  # BAD_CREDENTIALS | FAILED
+            credentials.set_status(self.user_id, self.site_id, credentials.STATUS_INVALID)
+            self.events.put((EV_LOGIN, False))
+        self._emit_conn()
+
+    def _cmd_connect(self) -> None:
+        """Серверный вход: берём сохранённые креды и логинимся в фоне."""
+        creds = credentials.get(self.user_id, self.site_id)
+        if creds is None:
+            self._log("Нет сохранённых данных для входа — введите логин и пароль.")
+            self._emit_conn()
+            self.events.put((EV_DONE, "connect"))
+            return
+        br = self._ensure_browser()  # автологин идёт в фоне (headless)
+        self._log(f"Вхожу на {self.adapter.display_name} как {creds.username}…")
+        try:
+            result = self.adapter.login_with_credentials(
+                br.page, creds.username, creds.password, log=self._log
+            )
+        except NotImplementedError:
+            self._log("Серверный логин для этого сайта не реализован.")
+            self.events.put((EV_DONE, "connect"))
+            return
+        self._handle_login_result(result)
+        self.events.put((EV_DONE, "connect"))
+
+    def _cmd_submit_sms(self, code: str) -> None:
+        """Ввести код подтверждения на странице, оставленной командой connect."""
+        if self._browser is None or not self._browser.is_alive():
+            self._log("Сессия входа потеряна — начните подключение заново.")
+            credentials.set_status(self.user_id, self.site_id, credentials.STATUS_INVALID)
+            self._emit_conn()
+            self.events.put((EV_DONE, "submit_sms"))
+            return
+        self._log("Отправляю код подтверждения…")
+        try:
+            result = self.adapter.submit_sms_code(self._browser.page, code, log=self._log)
+        except NotImplementedError:
+            self.events.put((EV_DONE, "submit_sms"))
+            return
+        self._handle_login_result(result)
+        self.events.put((EV_DONE, "submit_sms"))
 
     def _cmd_check_login(self) -> None:
         br = self._ensure_browser()

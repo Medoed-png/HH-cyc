@@ -17,6 +17,37 @@
   </header>
 
   <main class="content">
+    <!-- Подключение аккаунта hh.ru (серверный логин) -->
+    <section class="card" id="connect-card">
+      <div class="card-head">
+        <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Подключение аккаунта hh.ru</h2></div>
+        <span id="conn-badge" class="badge b-gray">не подключён</span>
+      </div>
+      <div class="card-body">
+      <div class="form-grid">
+        <label>Логин (email или телефон)</label>
+        <div class="field"><input id="hh-username" type="text" autocomplete="username"></div>
+
+        <label>Пароль</label>
+        <div class="field"><input id="hh-password" type="password" autocomplete="current-password"></div>
+
+        <label id="sms-label" style="display:none">Код из SMS / письма</label>
+        <div class="field" id="sms-field" style="display:none"><input id="hh-sms" type="text" autocomplete="one-time-code" inputmode="numeric"></div>
+      </div>
+
+      <div class="toolbar">
+        <button id="btn-connect" class="btn accent">Подключить</button>
+        <button id="btn-send-sms" class="btn accent" style="display:none">Отправить код</button>
+        <span class="spacer"></span>
+        <button id="btn-disconnect" class="btn danger">Отключить</button>
+      </div>
+      <div class="muted" style="margin-top:8px;font-size:12px">
+        Пароль хранится в зашифрованном виде и используется только для входа на hh.ru.
+        Если появится капча — нажмите «Показать окно браузера» и пройдите её вручную.
+      </div>
+      </div>
+    </section>
+
     <!-- Критерии -->
     <section class="card">
       <div class="card-head">

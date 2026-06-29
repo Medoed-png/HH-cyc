@@ -54,6 +54,115 @@ class HHAdapter(SiteAdapter):
     def open_manual_login(self, page: Page) -> None:
         page.goto(selectors.BASE + "/account/login", wait_until="domcontentloaded")
 
+    # --- серверный логин по логину/паролю + код (M5b) ---
+    def _logged_in_now(self, page: Page) -> bool:
+        """Признак входа на ТЕКУЩЕЙ странице без навигации (после submit)."""
+        if "/account/login" in page.url or "/auth/" in page.url:
+            return False
+        try:
+            return page.locator(selectors.LOGGED_IN_MARKER).count() > 0
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _has(self, page: Page, selector: str) -> bool:
+        try:
+            return page.locator(selector).first.is_visible(timeout=1500)
+        except Exception:  # noqa: BLE001
+            return False
+
+    def login_with_credentials(self, page: Page, username: str, password: str,
+                               log: Log = lambda m: None) -> LoginResult:
+        """Серверный вход на hh.ru по логину/паролю.
+
+        Возвращает LoginResult: OK | SMS_REQUIRED (страница оставлена на шаге кода —
+        дальше submit_sms_code) | CAPTCHA_REQUIRED | BAD_CREDENTIALS | FAILED.
+        ⚠️ Селекторы формы (selectors.LOGIN_*) не сверены вживую — см. примечание там.
+        """
+        page.goto(selectors.LOGIN_URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(1200)
+        if self._logged_in_now(page):
+            log("Уже авторизованы на hh.ru.")
+            return LoginResult(LoginStatus.OK)
+
+        # 1) Логин.
+        try:
+            page.locator(selectors.LOGIN_USERNAME_INPUT).first.fill(username, timeout=8000)
+        except Exception:  # noqa: BLE001
+            log("Не нашёл поле логина на форме входа hh.ru (проверьте селекторы).")
+            return LoginResult(LoginStatus.FAILED, "не найдено поле логина")
+
+        # 2) hh.ru по умолчанию предлагает вход по коду — переключаемся на пароль.
+        if not self._has(page, selectors.LOGIN_PASSWORD_INPUT):
+            if self._has(page, selectors.LOGIN_BY_PASSWORD_LINK):
+                try:
+                    page.locator(selectors.LOGIN_BY_PASSWORD_LINK).first.click(timeout=4000)
+                    page.wait_for_timeout(600)
+                except Exception:  # noqa: BLE001
+                    pass
+        # Если поля пароля всё ещё нет — возможно, нужен шаг «Продолжить».
+        if not self._has(page, selectors.LOGIN_PASSWORD_INPUT):
+            try:
+                page.locator(selectors.LOGIN_SUBMIT).first.click(timeout=4000)
+                page.wait_for_timeout(800)
+            except Exception:  # noqa: BLE001
+                pass
+
+        # 3) Пароль.
+        if not self._has(page, selectors.LOGIN_PASSWORD_INPUT):
+            log("Поле пароля не появилось — возможно, вход только по коду.")
+            # hh.ru мог отправить код сразу: проверим шаг кода ниже.
+        else:
+            try:
+                page.locator(selectors.LOGIN_PASSWORD_INPUT).first.fill(password, timeout=6000)
+            except Exception:  # noqa: BLE001
+                return LoginResult(LoginStatus.FAILED, "не удалось ввести пароль")
+
+        # 4) Отправка формы.
+        try:
+            page.locator(selectors.LOGIN_SUBMIT).first.click(timeout=5000)
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(2500)
+
+        return self._classify_login_state(page, log)
+
+    def submit_sms_code(self, page: Page, code: str,
+                        log: Log = lambda m: None) -> LoginResult:
+        """Ввести код подтверждения на странице, оставленной login_with_credentials."""
+        if not self._has(page, selectors.LOGIN_CODE_INPUT):
+            # Может, вход уже завершился (код не понадобился) — проверим.
+            if self._logged_in_now(page):
+                return LoginResult(LoginStatus.OK)
+            return LoginResult(LoginStatus.FAILED, "поле кода не найдено")
+        try:
+            page.locator(selectors.LOGIN_CODE_INPUT).first.fill(code, timeout=6000)
+        except Exception:  # noqa: BLE001
+            return LoginResult(LoginStatus.FAILED, "не удалось ввести код")
+        # Часть форм отправляет код автоматически; иначе жмём кнопку.
+        try:
+            page.locator(selectors.LOGIN_CODE_SUBMIT).first.click(timeout=4000)
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(2500)
+        return self._classify_login_state(page, log)
+
+    def _classify_login_state(self, page: Page, log: Log) -> LoginResult:
+        """Определить итог попытки входа по текущему состоянию страницы."""
+        if self._logged_in_now(page):
+            log("Вход на hh.ru выполнен.")
+            return LoginResult(LoginStatus.OK)
+        if self._has(page, selectors.CAPTCHA):
+            log("hh.ru показал капчу — нужен ручной ввод (кнопка «Показать окно»).")
+            return LoginResult(LoginStatus.CAPTCHA_REQUIRED)
+        if self._has(page, selectors.LOGIN_CODE_INPUT):
+            log("hh.ru запросил код подтверждения (SMS/письмо).")
+            return LoginResult(LoginStatus.SMS_REQUIRED)
+        if self._has(page, selectors.LOGIN_ERROR):
+            log("hh.ru отклонил вход — проверьте логин и пароль.")
+            return LoginResult(LoginStatus.BAD_CREDENTIALS)
+        log("Не удалось определить результат входа на hh.ru.")
+        return LoginResult(LoginStatus.FAILED, "неизвестное состояние формы входа")
+
     # --- поиск ---
     def search(self, page: Page, query: str, region: str, max_pages: int,
                log: Log = lambda m: None) -> list[Vacancy]:

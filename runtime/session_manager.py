@@ -18,7 +18,7 @@ import time
 from typing import Callable
 
 from .browser_session import (
-    BrowserSession, EV_LOG, EV_LOGIN, EV_VACANCY, EV_RESPONSES, EV_CHAT,
+    BrowserSession, EV_LOG, EV_LOGIN, EV_VACANCY, EV_RESPONSES, EV_CHAT, EV_CONN,
 )
 
 Publish = Callable[[int, dict], None]
@@ -37,6 +37,8 @@ def event_to_msg(kind: str, payload) -> dict | None:
     if kind == EV_CHAT:
         return {"type": "chat",
                 "vacancy_id": payload["vacancy_id"], "messages": payload["messages"]}
+    if kind == EV_CONN:
+        return {"type": "conn_status", **payload}
     return None  # EV_DONE и прочее в UI не транслируем
 
 
