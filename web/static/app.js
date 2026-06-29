@@ -44,6 +44,8 @@ function collectForm() {
     employment: checkedValues("employment"),
     schedule: checkedValues("schedule"),
     company_blacklist: $("company_blacklist").value,
+    autopilot_enabled: $("autopilot_enabled").checked,
+    autopilot_interval_minutes: $("autopilot_interval_minutes").value,
   };
 }
 
@@ -65,11 +67,13 @@ async function loadConfig() {
   for (const k of ["professions", "region", "salary_min", "exclude_words",
                    "include_words", "resume_name", "cover_letter",
                    "daily_limit", "max_pages", "experience",
-                   "company_blacklist"]) {
+                   "company_blacklist", "autopilot_interval_minutes"]) {
     if ($(k) && cfg[k] != null) $(k).value = cfg[k];
   }
   setChecks("employment", cfg.employment);
   setChecks("schedule", cfg.schedule);
+  $("autopilot_enabled").checked = !!cfg.autopilot_enabled;
+  $("autopilot-badge").style.display = cfg.autopilot_enabled ? "" : "none";
   $("salary_min").value = groupDigits($("salary_min").value);
 }
 
@@ -537,7 +541,13 @@ function bindButtons() {
     logLine("Прокси очищен.");
     loadProxy();
   };
-  $("btn-save").onclick = async () => { await api("/api/save", collectForm()); logLine("Критерии сохранены."); };
+  $("btn-save").onclick = async () => {
+    await api("/api/save", collectForm());
+    $("autopilot-badge").style.display = $("autopilot_enabled").checked ? "" : "none";
+    logLine($("autopilot_enabled").checked
+      ? "Критерии сохранены. Автопилот включён."
+      : "Критерии сохранены.");
+  };
 
   $("salary_min").addEventListener("input", (e) => {
     const pos = e.target.value.length;

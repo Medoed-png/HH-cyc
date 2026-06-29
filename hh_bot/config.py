@@ -42,6 +42,9 @@ class Criteria:
     schedule: list = field(default_factory=list)
     # Чёрный список компаний: вакансии этих работодателей пропускаем.
     company_blacklist: list = field(default_factory=list)
+    # Автопилот: периодически сам запускает поиск+отклик (в пределах дневного лимита).
+    autopilot_enabled: bool = False
+    autopilot_interval_minutes: int = 60
 
     @property
     def profession_texts(self) -> list:
@@ -170,6 +173,11 @@ def from_form(data: dict, base: Criteria | None = None) -> Criteria:
     crit.employment = _as_list(data.get("employment"))
     crit.schedule = _as_list(data.get("schedule"))
     crit.company_blacklist = _split(data.get("company_blacklist", ""))
+
+    # Автопилот (чекбокс + интервал в минутах, минимум 5).
+    crit.autopilot_enabled = bool(data.get("autopilot_enabled"))
+    crit.autopilot_interval_minutes = max(5, _to_int(
+        data.get("autopilot_interval_minutes", 60), 60))
     return crit
 
 

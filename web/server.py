@@ -46,8 +46,13 @@ async def lifespan(app: FastAPI):
     # создаст ленивая инициализация в Storage (первая сессия).
     from hh_bot.db import init_db
     init_db()
+    # Автопилот: периодический поиск+отклик для пользователей, включивших его.
+    from runtime.scheduler import Autopilot
+    autopilot = Autopilot(manager)
+    autopilot.start()
     yield
     # При остановке: корректно закрыть все сессии, чтобы сохранились cookies (вход).
+    autopilot.stop()
     manager.shutdown_all()
 
 
@@ -178,6 +183,8 @@ def api_config(request: Request, user: User = Depends(current_user)):
         "employment": crit.employment,
         "schedule": crit.schedule,
         "company_blacklist": ", ".join(crit.company_blacklist),
+        "autopilot_enabled": crit.autopilot_enabled,
+        "autopilot_interval_minutes": crit.autopilot_interval_minutes,
     }
 
 

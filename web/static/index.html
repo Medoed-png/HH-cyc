@@ -11,6 +11,7 @@
     <div class="brand">✨ HH-бот <span class="subtitle">авто-отклик на вакансии</span></div>
     <div class="header-right">
       <select id="site-select" class="site-select" title="Сайт поиска работы"></select>
+      <span id="autopilot-badge" class="badge b-green" style="display:none" title="Автопилот включён">🟢 автопилот</span>
       <div id="status" class="status muted">● проверяю вход…</div>
       <button id="btn-reconnect" class="btn" style="display:none" title="Сменить/переподключить аккаунт сайта">Подключить аккаунт</button>
       <span id="user-email" class="user-email"></span>
@@ -137,6 +138,14 @@
 
         <label>Чёрный список компаний</label>
         <div class="field"><input id="company_blacklist" type="text" autocomplete="off" placeholder="через запятую"></div>
+
+        <label>Автопилот</label>
+        <div class="field checks">
+          <label><input type="checkbox" id="autopilot_enabled"> Авто-запуск поиска и откликов</label>
+          <span class="muted">каждые</span>
+          <input id="autopilot_interval_minutes" type="text" style="width:64px" autocomplete="off">
+          <span class="muted">мин</span>
+        </div>
 
         <label>Сопроводительное письмо</label>
         <div class="field"><textarea id="cover_letter" rows="4"></textarea></div>
