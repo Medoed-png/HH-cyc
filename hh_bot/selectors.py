@@ -12,37 +12,36 @@ SEARCH_URL = BASE + "/search/vacancy"
 # Признак, что пользователь залогинен (присутствует меню пользователя).
 LOGGED_IN_MARKER = '[data-qa="mainmenu_applicantProfile"], [data-qa="mainmenu_myResumes"]'
 
-# --- Форма входа по логину/паролю + код подтверждения (для серверного логина, M5b) ---
-# ⚠️ Селекторы НЕ сверены вживую на реальном аккаунте hh.ru — при первом запуске
-# серверного логина проверьте и при необходимости поправьте здесь. Перечислены
-# несколько вариантов через запятую (берётся первый совпавший), чтобы пережить
-# мелкие изменения вёрстки.
+# --- Форма входа по логину/паролю + код подтверждения (серверный логин, M5) ---
+# Сверено вживую на странице hh.ru/account/login (вёрстка magritte, 2026).
+# Поток многошаговый: [Войти] -> выбор Телефон/Почта + логин -> [Войти с паролем]
+# -> пароль -> [Войти] -> (иногда) код подтверждения.
 LOGIN_URL = BASE + "/account/login"
-# Поле логина (email или телефон).
-LOGIN_USERNAME_INPUT = ('input[data-qa="login-input-username"], '
-                        'input[name="login"], input[name="username"], '
-                        'input[type="text"][autocomplete="username"]')
-# hh.ru по умолчанию предлагает вход по коду; ссылка/кнопка переключения на пароль.
-LOGIN_BY_PASSWORD_LINK = ('[data-qa="expand-login-by-password"], '
-                          '[data-qa="account-login-toggle-password"], '
-                          'button:has-text("Войти с паролем"), '
-                          'a:has-text("Войти с паролем")')
-# Поле пароля.
-LOGIN_PASSWORD_INPUT = ('input[data-qa="login-input-password"], '
+# Единая кнопка отправки на каждом шаге (текст меняется: «Войти»/«Дальше»).
+LOGIN_SUBMIT = '[data-qa="submit-button"]'
+# Шаг 1: карточка типа аккаунта «соискатель» (по умолчанию уже выбрана).
+LOGIN_ACCOUNT_APPLICANT = '[data-qa="account-type-card-APPLICANT"]'
+# Шаг 2: переключатель способа логина (radio перекрыт оверлеем -> клик force).
+LOGIN_CRED_EMAIL = '[data-qa="credential-type-EMAIL"]'
+LOGIN_CRED_PHONE = '[data-qa="credential-type-PHONE"]'
+# Поле логина: email или национальная часть номера (код страны +7 по умолчанию).
+LOGIN_EMAIL_INPUT = ('input[data-qa="applicant-login-input-email"], '
+                     'input[name="username"]')
+LOGIN_PHONE_INPUT = 'input[data-qa="magritte-phone-input-national-number-input"]'
+# Переключение на вход по паролю (появляется ПОСЛЕ ввода логина).
+LOGIN_BY_PASSWORD_LINK = '[data-qa="expand-login-by-password"]'
+# Поле пароля (появляется после «Войти с паролем»).
+LOGIN_PASSWORD_INPUT = ('input[data-qa="applicant-login-input-password"], '
                         'input[name="password"], input[type="password"]')
-# Кнопка отправки формы входа.
-LOGIN_SUBMIT = ('[data-qa="account-login-submit"], '
-                'button[data-qa="submit-button"], button[type="submit"]')
-# Поле кода подтверждения (SMS / код из письма).
-LOGIN_CODE_INPUT = ('input[data-qa="otp-code-input"], '
-                    'input[name="otpCode"], input[name="code"], '
-                    'input[autocomplete="one-time-code"]')
-# Кнопка подтверждения кода (часто та же submit-button на шаге кода).
-LOGIN_CODE_SUBMIT = ('[data-qa="otp-submit"], '
-                     'button[data-qa="submit-button"], button[type="submit"]')
-# Признак ошибки входа (неверный логин/пароль/код).
-LOGIN_ERROR = ('[data-qa="account-login-error"], [data-qa*="error"], '
-               '.bloko-form-error, [class*="error"]')
+# Поле кода подтверждения (SMS/письмо). ⚠️ Точное имя уточняется при первом входе
+# с реальным аккаунтом; держим по шаблону имён applicant-login-input-* + запасные.
+LOGIN_CODE_INPUT = ('input[data-qa="applicant-login-input-code"], '
+                    'input[data-qa*="otp"], input[data-qa*="code"], '
+                    'input[autocomplete="one-time-code"], input[name="code"]')
+# Кнопка подтверждения кода — та же submit-button на шаге кода.
+LOGIN_CODE_SUBMIT = '[data-qa="submit-button"]'
+# Признак ошибки (неверный логин/пароль/код).
+LOGIN_ERROR = '[data-qa="form-helper-error"], [data-qa$="-error"], [data-qa*="error"]'
 
 # --- Карточка вакансии в выдаче ---
 VACANCY_CARD = '[data-qa="vacancy-serp__vacancy"], [data-qa="vacancy-serp__vacancy_premium"]'
