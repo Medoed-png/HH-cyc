@@ -16,6 +16,7 @@ import webbrowser
 from contextlib import asynccontextmanager
 
 import uvicorn
+from sqlalchemy.exc import IntegrityError
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -125,7 +126,13 @@ def auth_register(data: auth.RegisterIn):
     if auth.get_user_by_email(data.email):
         return JSONResponse({"error": "Пользователь с таким email уже есть"},
                             status_code=409)
-    user = auth.create_user(data.email, data.password)
+    try:
+        user = auth.create_user(data.email, data.password)
+    except IntegrityError:
+        # Гонка: email заняли между проверкой и вставкой. Уникальный индекс —
+        # источник истины; отдаём тот же 409, а не необработанный 500.
+        return JSONResponse({"error": "Пользователь с таким email уже есть"},
+                            status_code=409)
     return {"token": auth.create_access_token(user.id),
             "user": {"id": user.id, "email": user.email}}
 
@@ -394,8 +401,12 @@ async def api_stop(request: Request, user: User = Depends(current_user)):
 
 @app.post("/api/responses")
 async def api_responses(request: Request, user: User = Depends(current_user)):
-    for sid in _targets(_site(await _body(request))):
-        manager.submit(user.id, sid, "responses")
+    # Ответы — строго по одному сайту: в режиме «все» события разных площадок
+    # затирали бы друг друга в одной таблице (чат/«просмотрено» тоже per-site).
+    site = _site(await _body(request))
+    if (err := _require_site(site)):
+        return err
+    manager.submit(user.id, site, "responses")
     return {"ok": True}
 
 

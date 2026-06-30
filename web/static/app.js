@@ -589,18 +589,37 @@ function renderConnStatus(st) {
   if (needSms) $("hh-sms").focus();
 }
 
+// Сбросить панель подключения в нейтральное состояние (синхронно). Без этого при
+// смене площадки оставались видимыми поле кода и старый _lastConn, и «Отправить
+// код» мог уйти на НОВЫЙ сайт код, полученный для прежнего.
+function resetConnectPanel() {
+  _lastConn = { status: "invalid" };
+  _awaitingCode = false;
+  $("hh-username").value = "";
+  $("hh-password").value = "";
+  $("hh-sms").value = "";
+  $("sms-label").style.display = "none";
+  $("sms-field").style.display = "none";
+  $("btn-send-sms").style.display = "none";
+  refreshConnectBadge();
+  togglePanelConnected(false);
+}
+
 // Загрузить статус подключения сайта (для точки и, если это выбранный сайт, для панели).
 async function loadConnStatusFor(siteId) {
   try {
     const st = await (await authFetch("/api/conn_status?site=" + siteId)).json();
     setSiteConn(siteId, st.status);
     if (siteId === connectSite) renderConnStatus(st);
-  } catch (e) { /* не критично */ }
+  } catch (e) {
+    if (siteId === connectSite) renderConnStatus({ status: "invalid" });  // нейтрально, не зависаем
+  }
 }
 
 // Выбрать площадку для подключения: загрузить её способы входа и статус.
 async function selectConnectSite(siteId) {
   connectSite = siteId;
+  resetConnectPanel();  // синхронно: убрать поле кода/старый статус прежней площадки
   $("connect-sites").querySelectorAll(".site-badge").forEach(el =>
     el.classList.toggle("selected", el.dataset.site === siteId));
   $("connect-site-title").textContent = "Аккаунт: " + (SITE_NAMES[siteId] || siteId);
@@ -956,6 +975,10 @@ function bindButtons() {
   };
   $("btn-stop").onclick = () => api("/api/stop");
   $("btn-responses").onclick = () => {
+    if (currentSite === ALL_SITES) {
+      logLine("Ответы доступны по одному сайту — выберите конкретную площадку в списке сверху.");
+      return;
+    }
     $("resp-body").innerHTML = '<tr><td colspan="5" class="muted-cell">Загружаю…</td></tr>';
     _lastRespReq = Date.now();  // ручное обновление тоже считается за «обновили»
     api("/api/responses");

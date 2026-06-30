@@ -104,6 +104,11 @@ class SuperJobAdapter(SiteAdapter):
                should_stop: Callable[[], bool] = lambda: False
                ) -> list[Vacancy]:
         # Фильтры опыта/занятости/графика для SuperJob пока не поддержаны (best-effort).
+        # Регион (передаётся кодом hh.ru) к SuperJob не применим — честно предупреждаем,
+        # чтобы пользователь понимал, что выдача всероссийская (113 = вся Россия).
+        if region and str(region) != "113":
+            log("  [SuperJob] фильтр региона не применён — выдача по всей России "
+                "(geo-параметр SuperJob ещё не сверён).")
         found: list[Vacancy] = []
         for page_num in range(max_pages):
             if should_stop():
