@@ -244,16 +244,18 @@ def _send_letter_via_chat(page: Page, vacancy_id: str, text: str, log) -> bool:
     if frame is None:
         return False
 
-    # Ждём поле ввода сообщения внутри iframe (чат грузится асинхронно).
+    # Ждём поле ввода сообщения внутри iframe (чат грузится асинхронно, иногда долго).
     box = None
-    for _ in range(20):  # до ~6 c
+    for _ in range(46):  # до ~14 c
         try:
-            candidate = frame.query_selector(selectors.CHAT_MESSAGE_INPUT)
-            if candidate is not None and candidate.is_visible():
-                box = candidate
-                break
+            for candidate in frame.query_selector_all(selectors.CHAT_MESSAGE_INPUT):
+                if candidate is not None and candidate.is_visible():
+                    box = candidate
+                    break
         except Exception:  # noqa: BLE001
             pass
+        if box is not None:
+            break
         page.wait_for_timeout(300)
     if box is None:
         log("  поле ввода чата не появилось — письмо не отправлено")

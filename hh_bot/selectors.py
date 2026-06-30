@@ -87,9 +87,17 @@ CAPTCHA = '[data-qa="captcha"], .captcha, iframe[src*="captcha"]'
 VACANCY_OPEN_CHAT = '[data-qa="open_chat"]'
 # Часть URL iframe, в котором живёт чат (по ней находим нужный frame).
 CHAT_FRAME_URL_PART = "chatik.hh.ru/chat"
-# Поле ввода и кнопка отправки ВНУТРИ iframe чата.
-CHAT_MESSAGE_INPUT = 'textarea[data-qa="chatik-new-message-text"]'
-CHAT_SEND_BUTTON = '[data-qa="chatik-do-send-message"]'
+# Поле ввода и кнопка отправки ВНУТРИ iframe чата. Перечислены варианты через
+# запятую (берётся первый видимый), т.к. chatik периодически меняет разметку и мог
+# перейти с textarea на contenteditable-div.
+CHAT_MESSAGE_INPUT = ('textarea[data-qa="chatik-new-message-text"], '
+                      '[data-qa="chatik-new-message-text"], '
+                      'textarea[name="text"], '
+                      'div[contenteditable="true"], '
+                      'textarea[placeholder*="ообщени"]')
+CHAT_SEND_BUTTON = ('[data-qa="chatik-do-send-message"], '
+                    '[data-qa*="send-message"], '
+                    'button[data-qa*="send"]')
 # Текст сообщений в чате (подтверждение отправки / защита от дубля).
 CHAT_BUBBLE_WRAPPER = '[data-qa="chat-bubble-wrapper"]'
 CHAT_BUBBLE_TEXT = '[data-qa="chat-bubble-text"]'
