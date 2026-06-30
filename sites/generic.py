@@ -89,6 +89,10 @@ class GenericSiteAdapter(SiteAdapter):
         m = re.search(self.ID_RE, url)
         return m.group(1) if m else url
 
+    def _blocked(self, page: Page) -> bool:
+        """Показал ли сайт страницу блокировки/капчи (анти-бот). По умолчанию нет."""
+        return False
+
     def _parse_card(self, card, profession: str) -> Vacancy | None:
         link_el = card.query_selector(self.TITLE_LINK)
         if link_el is None:
@@ -128,6 +132,10 @@ class GenericSiteAdapter(SiteAdapter):
             log(f"  [{self.display_name}] страница {page_num + 1}: {query}")
             page.goto(self._build_url(query, page_num), wait_until="domcontentloaded")
             page.wait_for_timeout(1500)
+            if self._blocked(page):
+                log(getattr(self, "BLOCK_MSG",
+                            f"[{self.display_name}] доступ ограничен (анти-бот)."))
+                break
             cards = page.query_selector_all(self.CARD)
             parsed = [v for v in (self._parse_card(c, query) for c in cards) if v]
             fresh = [v for v in parsed if v.url not in seen]

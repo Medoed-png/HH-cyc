@@ -12,6 +12,13 @@ from .generic import GenericSiteAdapter
 
 
 class AvitoAdapter(GenericSiteAdapter):
+    """Avito Работа. ⚠️ У Avito сильная анти-бот защита: с дата-центрового IP сайт
+    отдаёт страницу «Доступ ограничен: проблема с IP» с капчей (проверено вживую
+    2026-06-30 — поиск не открылся). Чтобы поиск заработал, нужен российский
+    residential/mobile-прокси (поле «Прокси») и/или ручное прохождение капчи через
+    «Показать окно браузера». Селекторы ниже — best-effort по типичной разметке
+    Avito (data-marker), НЕ сверены вживую (страница была заблокирована).
+    """
     site_id = "avito"
     display_name = "Avito Работа"
     BASE = "https://www.avito.ru"
@@ -20,9 +27,25 @@ class AvitoAdapter(GenericSiteAdapter):
     PAGE_PARAM = "p"
     PAGE_BASE = 1
     LOGIN_URL = "https://www.avito.ru/#login"
+    # best-effort (Avito помечает элементы data-marker); сверить при доступе через прокси.
+    CARD = "[data-marker='item']"
+    TITLE_LINK = "[data-marker='item-title']"
+    SALARY = "[data-marker='item-price']"
     ID_RE = r"_(\d+)(?:\?|$)"
-    # ⚠️ CARD/TITLE_LINK/COMPANY/SALARY — заполнить при живой сверке (у Avito
-    # сильная анти-бот защита, потребуется аккуратность).
+    BLOCK_MSG = ("Avito ограничил доступ (капча/IP). Нужен российский residential-"
+                 "прокси (поле «Прокси») и/или пройдите капчу через «Показать окно "
+                 "браузера».")
+
+    def _blocked(self, page) -> bool:
+        try:
+            title = (page.title() or "").lower()
+            if "доступ ограничен" in title or "captcha" in title:
+                return True
+            body = (page.inner_text("body") or "").lower()[:300]
+            return any(k in body for k in ("доступ ограничен", "решения капчи",
+                                           "проблема с ip"))
+        except Exception:  # noqa: BLE001
+            return False
 
 
 class HabrCareerAdapter(GenericSiteAdapter):
