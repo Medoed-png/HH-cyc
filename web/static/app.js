@@ -458,32 +458,6 @@ function renderStatsChart(s) {
   }
 }
 
-let _dailyChart = null;
-
-function renderDailyChart(daily) {
-  const el = $("daily-chart");
-  if (!el || typeof Chart === "undefined" || !Array.isArray(daily)) return;
-  const data = {
-    labels: daily.map(d => d.date),
-    datasets: [{
-      label: "Откликов",
-      data: daily.map(d => d.count),
-      backgroundColor: "#0d6efd",
-      borderRadius: 4,
-    }],
-  };
-  const opts = {
-    plugins: { legend: { display: false } },
-    scales: {
-      x: { ticks: { color: "#adb5bd" }, grid: { display: false } },
-      y: { beginAtZero: true, ticks: { color: "#adb5bd", precision: 0 },
-           grid: { color: "rgba(255,255,255,.06)" } },
-    },
-  };
-  if (_dailyChart) { _dailyChart.data = data; _dailyChart.update(); }
-  else _dailyChart = new Chart(el, { type: "bar", data, options: opts });
-}
-
 async function loadStats() {
   try {
     const s = await (await authFetch("/api/stats?site=" + currentSite)).json();
@@ -494,7 +468,6 @@ async function loadStats() {
     $("st-viewed").textContent = s.viewed ?? 0;
     $("st-conv").textContent = (s.conversion ?? 0) + "%";
     renderStatsChart(s);
-    renderDailyChart(s.daily);
   } catch (e) { /* не критично */ }
 }
 
