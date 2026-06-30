@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import secrets
 import threading
 import time
 import webbrowser
@@ -31,7 +32,7 @@ from hh_bot.suggest import fetch_suggestions
 from runtime import SessionManager
 from sites import list_sites, get_adapter, DEFAULT_SITE, ALL_SITES, real_site_ids
 from web import auth
-from web.auth import current_user
+from web.auth import current_user, _extract_token, _user_id_from_token
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
@@ -136,6 +137,35 @@ def _publish(user_id: int, msg: dict) -> None:
             loop.call_soon_threadsafe(q.put_nowait, msg)
         except RuntimeError:  # noqa: BLE001 — loop останавливается
             pass
+
+
+# --- одноразовые билеты для SSE ---
+# EventSource не умеет слать заголовок Authorization, а долгоживущий JWT в URL
+# (?token=) утекает в логи/историю. Поэтому фронт берёт КРАТКОЖИВУЩИЙ ОДНОРАЗОВЫЙ
+# билет (POST с токеном в заголовке) и подключается к SSE по нему.
+_tickets: dict[str, tuple[int, float]] = {}  # ticket -> (user_id, expires_at monotonic)
+_tickets_lock = threading.Lock()
+_TICKET_TTL = 30.0  # секунд — билет нужен лишь на момент открытия соединения
+
+
+def _issue_ticket(user_id: int) -> str:
+    ticket = secrets.token_urlsafe(24)
+    now = time.monotonic()
+    with _tickets_lock:
+        for k in [k for k, (_uid, exp) in _tickets.items() if exp < now]:
+            _tickets.pop(k, None)  # подчистить протухшие, чтобы словарь не рос
+        _tickets[ticket] = (user_id, now + _TICKET_TTL)
+    return ticket
+
+
+def _consume_ticket(ticket: str) -> int | None:
+    """Проверить и СРАЗУ погасить билет (одноразовый). Вернуть user_id или None."""
+    with _tickets_lock:
+        item = _tickets.pop(ticket, None)
+    if not item:
+        return None
+    user_id, exp = item
+    return user_id if exp >= time.monotonic() else None
 
 
 # Пул per-user сессий браузера (владеет Playwright; события -> _publish).
@@ -477,17 +507,36 @@ def api_cities(q: str = "", site: str = DEFAULT_SITE,
         return []
 
 
+@app.post("/api/events/ticket")
+def api_events_ticket(user: User = Depends(current_user)):
+    """Выдать одноразовый краткоживущий билет для подключения к SSE.
+
+    Авторизация — по заголовку (current_user); билет затем кладётся в ?ticket=,
+    чтобы не светить долгоживущий JWT в URL.
+    """
+    return {"ticket": _issue_ticket(user.id)}
+
+
 @app.get("/api/events")
-async def api_events(request: Request, user: User = Depends(current_user)):
+async def api_events(request: Request):
     """Поток событий (SSE) ТОЛЬКО для текущего пользователя.
 
-    Токен приходит в query (?token=), т.к. EventSource не умеет заголовки.
+    Пользователь определяется по ОДНОРАЗОВОМУ билету (?ticket=, /api/events/ticket);
+    как фолбэк ещё принимается токен (заголовок/?token=) для совместимости.
     Регистрируем личную asyncio-очередь подписчика; события чужих сессий сюда не
     попадут. Эндпоинт ПОЛНОСТЬЮ асинхронный — соединение не занимает поток из
     anyio-пула на всё своё время (раньше много вкладок исчерпывали пул).
     """
+    ticket = request.query_params.get("ticket")
+    user_id = _consume_ticket(ticket) if ticket else None
+    if user_id is None:  # фолбэк на токен (заголовок Authorization или ?token=)
+        tok = _extract_token(request)
+        user_id = _user_id_from_token(tok) if tok else None
+    if user_id is None:
+        return JSONResponse({"error": "Требуется вход"}, status_code=401)
+
     q: asyncio.Queue = asyncio.Queue()
-    _add_subscriber(user.id, q)
+    _add_subscriber(user_id, q)
 
     async def stream():
         try:
@@ -500,7 +549,7 @@ async def api_events(request: Request, user: User = Depends(current_user)):
                         break
                     yield ": keep-alive\n\n"  # heartbeat, чтобы соединение не падало
         finally:
-            _remove_subscriber(user.id, q)
+            _remove_subscriber(user_id, q)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
