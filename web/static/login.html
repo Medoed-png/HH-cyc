@@ -42,8 +42,17 @@
   <script src="/static/auth.js"></script>
   <script>
     "use strict";
-    // Если уже авторизован — сразу в приложение.
-    if (getToken()) location.href = "/";
+    // Если токен есть И он ещё валиден — сразу в приложение. Иначе чистим протухший
+    // токен и остаёмся на форме (без «отскока» /login → / → /login при истёкшем JWT).
+    (async () => {
+      const t = getToken();
+      if (!t) return;
+      try {
+        const r = await fetch("/auth/me", { headers: { Authorization: "Bearer " + t } });
+        if (r.ok) { location.href = "/"; return; }
+      } catch (e) { /* нет связи — остаёмся на форме */ }
+      clearToken();
+    })();
 
     let mode = "login"; // login | register
     const $ = (id) => document.getElementById(id);

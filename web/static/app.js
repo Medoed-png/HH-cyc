@@ -15,6 +15,7 @@ let _loggedIn = false;        // залогинен ли на выбранном
 let _autoRespTimer = null;
 let _lastRespReq = 0;         // когда последний раз ЗАПРАШИВАЛИ ответы (троттлинг)
 let _lastRespAt = 0;          // когда последний раз ПРИШЛИ ответы (отметка времени)
+let _pendingManualResp = false;  // обновление запрошено вручную (можно перерисовать)
 
 function api(path, body) {
   // Сайт добавляем в тело каждого POST, чтобы бэкенд знал, к какой сессии слать.
@@ -78,12 +79,17 @@ function logLine(text) {
 function groupDigits(value) {
   const digits = (value || "").replace(/\D/g, "");
   if (!digits) return "";
-  return parseInt(digits, 10).toLocaleString("ru-RU").replace(/ /g, ".");
+  // toLocaleString ru-RU разделяет тысячи неразрывным/узким пробелом
+  // (U+00A0/U+202F), а не обычным — заменяем любой пробельный разделитель.
+  return parseInt(digits, 10).toLocaleString("ru-RU").replace(/\s/gu, ".");
 }
 
 // ---------- загрузка/сохранение критериев ----------
 async function loadConfig() {
-  const cfg = await (await authFetch("/api/config?site=" + currentSite)).json();
+  let cfg;
+  try {
+    cfg = await (await authFetch("/api/config?site=" + currentSite)).json();
+  } catch (e) { return; }  // 401 уже увёл на /login; сетевую ошибку не роняем наружу
   for (const k of ["professions", "region", "salary_min", "exclude_words",
                    "include_words", "resume_name", "cover_letter",
                    "daily_limit", "max_pages", "experience",
@@ -275,7 +281,7 @@ function renderUnreadBar(newCount, unread) {
   bar.style.display = "block";
   const parts = [];
   if (newCount > 0) parts.push(`<b>${newCount}</b> ${plural(newCount, "новый ответ", "новых ответа", "новых ответов")}`);
-  if (unread > 0) parts.push(`${unread} непрочитанных сообщений`);
+  if (unread > 0) parts.push(`${unread} ${plural(unread, "непрочитанное сообщение", "непрочитанных сообщения", "непрочитанных сообщений")}`);
   bar.innerHTML = `<i class="bi bi-chat-dots"></i> ` + parts.join(" · ") +
     ` — подсвеченные строки содержат новый ответ; откройте «Посмотреть ответ», и подсветка пропадёт.`;
 }
@@ -859,7 +865,10 @@ function connectEvents() {
         renderResponses([], 0, true);
         if (!msg.site || msg.site === currentSite) setStatus(false);
       } else {
-        renderResponses(msg.items, msg.unread || 0);
+        const manual = _pendingManualResp; _pendingManualResp = false;
+        // Авто-обновление при ОТКРЫТОМ чате не перерисовываем — иначе переписка
+        // схлопнулась бы и кэш потерялся. Ручное обновление перерисовывает всегда.
+        if (manual || openPanels.size === 0) renderResponses(msg.items, msg.unread || 0);
         _lastRespAt = Date.now(); updateRespBadge();
       }
       loadStats();
@@ -981,6 +990,7 @@ function bindButtons() {
     }
     $("resp-body").innerHTML = '<tr><td colspan="5" class="muted-cell">Загружаю…</td></tr>';
     _lastRespReq = Date.now();  // ручное обновление тоже считается за «обновили»
+    _pendingManualResp = true;  // ручной запрос — таблицу перерисовать можно
     api("/api/responses");
     setBusy("responses");
   };

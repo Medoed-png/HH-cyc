@@ -313,8 +313,13 @@ class BrowserSession(threading.Thread):
         if logged:
             self._persist_cookies()  # закрепить вход на диске сразу
             self._go_background()    # убрать видимое окно входа в фон
+            # Зафиксировать статус 'connected' (если есть строка кред) — иначе после
+            # перезагрузки страницы карточка кратко показывала бы «не подключён».
+            credentials.set_status(self.user_id, self.site_id,
+                                   credentials.STATUS_CONNECTED, logged_in=True)
         self._log("Авторизация подтверждена." if logged else "Вы ещё не вошли.")
         self.events.put((EV_LOGIN, logged))
+        self._emit_conn()
         self.events.put((EV_DONE, "check_login"))
 
     def _do_search(self, crit: Criteria) -> list:

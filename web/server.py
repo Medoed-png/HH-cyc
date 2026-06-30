@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from sqlalchemy.exc import IntegrityError
 from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -58,6 +59,21 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="HH-бот", lifespan=lifespan)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_handler(request: Request, exc: RequestValidationError):
+    """Приводим 422 Pydantic к единому формату {error}, который читает фронтенд
+    (раньше клиент читал data.error, а сервер слал data.detail → сообщение терялось)."""
+    field = ""
+    try:
+        field = (exc.errors()[0].get("loc") or [None])[-1]
+    except Exception:  # noqa: BLE001
+        pass
+    msg = ("Неверный формат email." if field == "email"
+           else "Пароль слишком короткий (минимум 6 символов)." if field == "password"
+           else "Проверьте введённые данные.")
+    return JSONResponse({"error": msg}, status_code=422)
 
 
 @app.middleware("http")

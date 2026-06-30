@@ -110,6 +110,7 @@ class SuperJobAdapter(SiteAdapter):
             log("  [SuperJob] фильтр региона не применён — выдача по всей России "
                 "(geo-параметр SuperJob ещё не сверён).")
         found: list[Vacancy] = []
+        seen: set[str] = set()  # дедуп по url + детект «пагинация вернула ту же страницу»
         for page_num in range(max_pages):
             if should_stop():
                 log("  [SuperJob] поиск остановлен.")
@@ -120,12 +121,15 @@ class SuperJobAdapter(SiteAdapter):
             page.wait_for_timeout(1500)
             cards = page.query_selector_all(selectors.VACANCY_CARD)
             parsed = [v for v in (self._parse_card(c, query) for c in cards) if v]
-            if not parsed:
-                if page_num == 0:
+            fresh = [v for v in parsed if v.url not in seen]
+            if not fresh:  # пусто или повтор предыдущей страницы — конец выдачи
+                if page_num == 0 and not parsed:
                     log("  [SuperJob] карточки не распознаны — вероятно, нужны "
                         "актуальные селекторы (sites/superjob/selectors.py).")
                 break
-            found.extend(parsed)
+            for v in fresh:
+                seen.add(v.url)
+            found.extend(fresh)
         return found
 
     # --- отклик / ответы (заглушки до живой сверки SuperJob) ---
