@@ -199,35 +199,6 @@
       </div>
     </section>
 
-    <!-- Статистика -->
-    <section class="card mb-3" id="stats-card">
-      <div class="card-head">
-        <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Статистика</h2></div>
-        <button id="btn-refresh-stats" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> Обновить</button>
-      </div>
-      <div class="card-body">
-        <div class="row g-3 align-items-center">
-          <div class="col-lg-8">
-            <div class="stats-grid">
-              <div class="stat"><div class="stat-num" id="st-today">0</div><div class="stat-lbl">Отправлено сегодня</div></div>
-              <div class="stat"><div class="stat-num" id="st-total">0</div><div class="stat-lbl">Всего откликов</div></div>
-              <div class="stat"><div class="stat-num text-success" id="st-invites">0</div><div class="stat-lbl">Приглашения</div></div>
-              <div class="stat"><div class="stat-num text-danger" id="st-reject">0</div><div class="stat-lbl">Отказы</div></div>
-              <div class="stat"><div class="stat-num text-info" id="st-viewed">0</div><div class="stat-lbl">Просмотрено</div></div>
-              <div class="stat"><div class="stat-num" id="st-conv">0%</div><div class="stat-lbl">Конверсия</div></div>
-            </div>
-          </div>
-          <div class="col-lg-4">
-            <canvas id="stats-chart" height="200"></canvas>
-          </div>
-        </div>
-        <div class="mt-4">
-          <div class="text-secondary small mb-1"><i class="bi bi-bar-chart-line"></i> Отклики по дням (14 дней)</div>
-          <canvas id="daily-chart" height="90"></canvas>
-        </div>
-      </div>
-    </section>
-
     <!-- Вакансии -->
     <section class="card mb-3">
       <div class="card-head">
@@ -266,6 +237,35 @@
           </tbody>
         </table>
       </div>
+      </div>
+    </section>
+
+    <!-- Статистика -->
+    <section class="card mb-3" id="stats-card">
+      <div class="card-head">
+        <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Статистика</h2></div>
+        <button id="btn-refresh-stats" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> Обновить</button>
+      </div>
+      <div class="card-body">
+        <div class="row g-3 align-items-center">
+          <div class="col-lg-8">
+            <div class="stats-grid">
+              <div class="stat"><div class="stat-num" id="st-today">0</div><div class="stat-lbl">Отправлено сегодня</div></div>
+              <div class="stat"><div class="stat-num" id="st-total">0</div><div class="stat-lbl">Всего откликов</div></div>
+              <div class="stat"><div class="stat-num text-success" id="st-invites">0</div><div class="stat-lbl">Приглашения</div></div>
+              <div class="stat"><div class="stat-num text-danger" id="st-reject">0</div><div class="stat-lbl">Отказы</div></div>
+              <div class="stat"><div class="stat-num text-info" id="st-viewed">0</div><div class="stat-lbl">Просмотрено</div></div>
+              <div class="stat"><div class="stat-num" id="st-conv">0%</div><div class="stat-lbl">Конверсия</div></div>
+            </div>
+          </div>
+          <div class="col-lg-4">
+            <canvas id="stats-chart" height="200"></canvas>
+          </div>
+        </div>
+        <div class="mt-4">
+          <div class="text-secondary small mb-1"><i class="bi bi-bar-chart-line"></i> Отклики по дням (14 дней)</div>
+          <canvas id="daily-chart" height="90"></canvas>
+        </div>
       </div>
     </section>
 
