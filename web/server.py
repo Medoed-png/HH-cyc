@@ -58,6 +58,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="HH-бот", lifespan=lifespan)
 
+
+@app.middleware("http")
+async def _no_cache_static(request: Request, call_next):
+    """Не кэшировать HTML/JS/CSS, чтобы браузер всегда брал свежую версию интерфейса
+    (иначе после обновлений фронтенда остаётся старый app.js и кнопки «не работают»)."""
+    resp = await call_next(request)
+    path = request.url.path
+    if path == "/" or path == "/login" or path.startswith("/static"):
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+    return resp
+
+
 # --- per-user SSE: реестр подписчиков по user_id ---
 # Каждое открытое соединение /api/events регистрирует свою очередь; события
 # сессии пользователя рассылаются только в его очереди (изоляция между людьми).

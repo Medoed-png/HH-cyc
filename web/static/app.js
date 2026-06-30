@@ -591,8 +591,15 @@ function bindButtons() {
   };
   $("btn-refresh-stats").onclick = loadStats;
   $("btn-reconnect").onclick = () => {
-    logLine("Выхожу из аккаунта сайта — сейчас появится форма подключения…");
+    logLine("Выход из аккаунта. Введите логин (телефон или email) в карточке «Подключение аккаунта» и нажмите «Подключить» — придёт код.");
     api("/api/logout_site");  // сбросит cookies -> придёт login=false -> покажется панель
+    // Сразу показать форму подключения и подвести к ней.
+    const card = $("connect-card");
+    if (card) {
+      card.style.display = "";
+      card.classList.remove("collapsed");
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
   };
   $("btn-connect").onclick = () => {
     const username = $("hh-username").value.trim();
