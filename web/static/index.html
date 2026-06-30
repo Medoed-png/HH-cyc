@@ -223,7 +223,10 @@
     <section class="card mb-3">
       <div class="card-head">
         <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Ответы на отклики</h2></div>
-        <button id="btn-responses" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> Обновить ответы</button>
+        <div class="d-flex align-items-center gap-2">
+          <span id="responses-auto" class="badge b-blue" title="Автоматическое обновление"></span>
+          <button id="btn-responses" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> Обновить ответы</button>
+        </div>
       </div>
       <div class="card-body">
       <div id="resp-unread" class="unread-bar" style="display:none"></div>

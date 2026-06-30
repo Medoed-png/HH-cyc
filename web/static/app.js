@@ -8,6 +8,12 @@ let currentSite = localStorage.getItem("hh_site") || "hh";
 const ALL_SITES = "all";
 const SITE_NAMES = {};  // id сайта -> отображаемое имя (из /api/sites)
 
+// Авто-обновление ответов на отклики (минуты). Работает, пока вкладка открыта и
+// пользователь авторизован. Кнопка «Обновить ответы» — ручной запуск в любой момент.
+const RESPONSES_REFRESH_MIN = 5;
+let _loggedIn = false;        // залогинен ли на выбранном сайте (из setStatus)
+let _autoRespTimer = null;
+
 function api(path, body) {
   // Сайт добавляем в тело каждого POST, чтобы бэкенд знал, к какой сессии слать.
   const payload = Object.assign({ site: currentSite }, body || {});
@@ -471,6 +477,18 @@ async function loadStats() {
   } catch (e) { /* не критично */ }
 }
 
+// Авто-обновление ответов на отклики раз в RESPONSES_REFRESH_MIN минут.
+function startResponsesAutoRefresh() {
+  const badge = $("responses-auto");
+  if (badge) badge.textContent = `авто ⟳ каждые ${RESPONSES_REFRESH_MIN} мин`;
+  if (_autoRespTimer) return;  // не плодить таймеры
+  _autoRespTimer = setInterval(() => {
+    if (document.visibilityState !== "visible") return;     // в фоне не дёргаем
+    if (!_loggedIn || currentSite === ALL_SITES) return;    // только когда вошли на сайте
+    api("/api/responses");  // ответ придёт по SSE -> обновит таблицу и статистику
+  }, RESPONSES_REFRESH_MIN * 60000);
+}
+
 let _statsTimer = null;
 function scheduleStatsRefresh() {  // дебаунс: не дёргать на каждый отклик
   clearTimeout(_statsTimer);
@@ -504,12 +522,14 @@ function setStatus(loggedIn) {
   // Режим «все сайты»: единый статус входа неприменим — нейтральный вид,
   // подключение/переподключение скрыты (вход настраивается на конкретном сайте).
   if (currentSite === ALL_SITES) {
+    _loggedIn = false;
     el.className = "status muted";
     el.textContent = "🌐 поиск по всем сайтам";
     if ($("connect-card")) $("connect-card").style.display = "none";
     if ($("btn-reconnect")) $("btn-reconnect").style.display = "none";
     return;
   }
+  _loggedIn = loggedIn;  // для авто-обновления ответов (только когда вошли)
   el.className = "status " + (loggedIn ? "ok" : "bad");
   el.textContent = loggedIn ? "● вы вошли" : "● не авторизованы";
   // Карточка подключения нужна только когда пользователь НЕ вошёл. Если он уже
@@ -689,6 +709,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   loadProxy();                               // статус прокси пользователя
   loadTelegram();                            // статус Telegram-уведомлений
   loadStats();                               // дашборд статистики
+  startResponsesAutoRefresh();               // авто-обновление ответов раз в N мин
   if (currentSite !== ALL_SITES) api("/api/check_login").catch(() => {});
   bindAutoLogin();
 });
