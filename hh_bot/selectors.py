@@ -9,8 +9,16 @@ BASE = "https://hh.ru"
 SEARCH_URL = BASE + "/search/vacancy"
 
 # --- Авторизация ---
-# Признак, что пользователь залогинен (присутствует меню пользователя).
-LOGGED_IN_MARKER = '[data-qa="mainmenu_applicantProfile"], [data-qa="mainmenu_myResumes"]'
+# Признак, что пользователь залогинен (присутствует меню/кнопки личного кабинета).
+# hh.ru переименовал старые data-qa (mainmenu_applicantProfile/myResumes больше нет
+# на странице) — добавлены актуальные маркеры залогиненной шапки (сверено вживую
+# 2026-06-30: profile-activator / applicantProfileDesktopDrop-button / уведомления /
+# чат — встречаются ТОЛЬКО у вошедшего пользователя, у гостя их нет).
+LOGGED_IN_MARKER = (
+    '[data-qa="mainmenu_applicantProfile"], [data-qa="mainmenu_myResumes"], '
+    '[data-qa="profile-activator"], [data-qa="applicantProfileDesktopDrop-button"], '
+    '[data-qa="applicantProfileMobileDrop-button"], [data-qa="userNotifications-button"]'
+)
 
 # --- Форма входа по логину/паролю + код подтверждения (серверный логин, M5) ---
 # Сверено вживую на странице hh.ru/account/login (вёрстка magritte, 2026).
@@ -78,8 +86,16 @@ DATA_COLLECTOR_CLOSE = '[data-qa="additional-data-collector__popup-close"]'
 RESUME_SELECT = '[data-qa="resume-select"]'
 # Признак, что требуется заполнить тест/доп. вопросы (такие вакансии пропускаем).
 RESPONSE_QUESTIONNAIRE = '[data-qa="task-body"], [data-qa="response-question"]'
-# Признак капчи.
-CAPTCHA = '[data-qa="captcha"], .captcha, iframe[src*="captcha"]'
+# Признак капчи. hh.ru при подозрении на бота показывает капчу «Текст с картинки»
+# на шаге входа (data-qa: account-captcha-error / captcha-renew-text / captcha-language)
+# — её НЕЛЬЗЯ пройти автоматически, нужен ручной ввод в окне. Старый [data-qa="captcha"]
+# уже не встречается, поэтому перечислены актуальные маркеры (сверено вживую 2026-06-30).
+CAPTCHA = ('[data-qa="captcha"], [data-qa*="captcha"], [data-qa="account-captcha-error"], '
+           '[data-qa="captcha-renew-text"], [data-qa="captcha-language"], '
+           'input[name="captchaText"], input[data-qa*="captcha"], '
+           '.captcha, iframe[src*="captcha"]')
+# Текстовый маркер капчи (на случай смены data-qa) — ищется в тексте страницы.
+CAPTCHA_TEXT = ("подтвердите, что вы не робот", "текст с картинки")
 
 # --- Чат вакансии (фолбэк доставки сопроводительного письма) ---
 # Если inline-поле письма не появилось, письмо отправляем сообщением в чат.

@@ -22,40 +22,53 @@
   </nav>
 
   <main class="container py-4">
-    <!-- Подключение аккаунта hh.ru (серверный логин). Скрыта по умолчанию. -->
-    <section class="card mb-3" id="connect-card" style="display:none">
+    <!-- Подключение аккаунтов площадок (ряд иконок + форма входа выбранного сайта). -->
+    <section class="card mb-3" id="connect-card">
       <div class="card-head">
-        <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Подключение аккаунта hh.ru</h2></div>
+        <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Подключение аккаунтов</h2></div>
         <span id="conn-badge" class="badge b-gray">не подключён</span>
       </div>
       <div class="card-body">
-      <!-- Выбор способа входа -->
-      <div class="btn-group w-100 mb-3" role="group">
-        <button id="mode-phone" type="button" class="btn btn-primary active"><i class="bi bi-telephone"></i> По номеру телефона</button>
-        <button id="mode-email" type="button" class="btn btn-outline-primary"><i class="bi bi-envelope"></i> По почте</button>
+      <!-- Ряд площадок: цветной бейдж-буква + название + точка статуса. -->
+      <div id="connect-sites" class="connect-sites mb-3"></div>
+
+      <div class="text-secondary small mb-2" id="connect-site-title"></div>
+
+      <!-- Аккаунт уже подключён (вход выполнен) -->
+      <div id="connect-connected" class="alert alert-success py-2 mb-2" style="display:none">
+        <i class="bi bi-check-circle"></i> Аккаунт подключён — вход выполнен.
       </div>
 
-      <div class="form-grid">
-        <label id="username-label">Номер телефона</label>
-        <div class="field"><input id="hh-username" class="form-control" type="text" autocomplete="username" placeholder="+7…"></div>
+      <!-- Форма входа выбранного сайта (строится по его способам входа) -->
+      <div id="connect-login">
+        <div id="connect-modes" class="btn-group w-100 mb-3" role="group"></div>
 
-        <label id="password-label" style="display:none">Пароль</label>
-        <div class="field" id="password-field" style="display:none"><input id="hh-password" class="form-control" type="password" autocomplete="current-password"></div>
+        <div class="form-grid">
+          <label id="username-label">Логин</label>
+          <div class="field"><input id="hh-username" class="form-control" type="text" autocomplete="username" placeholder="+7…"></div>
 
-        <label id="sms-label" style="display:none">Код из SMS / письма</label>
-        <div class="field" id="sms-field" style="display:none"><input id="hh-sms" class="form-control" type="text" autocomplete="one-time-code" inputmode="numeric"></div>
+          <label id="password-label" style="display:none">Пароль</label>
+          <div class="field" id="password-field" style="display:none"><input id="hh-password" class="form-control" type="password" autocomplete="current-password"></div>
+
+          <label id="sms-label" style="display:none">Код из SMS / письма</label>
+          <div class="field" id="sms-field" style="display:none"><input id="hh-sms" class="form-control" type="text" autocomplete="one-time-code" inputmode="numeric"></div>
+        </div>
+        <div class="toolbar">
+          <button id="btn-connect" class="btn btn-primary"><i class="bi bi-box-arrow-in-right"></i> Войти</button>
+          <button id="btn-send-sms" class="btn btn-success" style="display:none"><i class="bi bi-check2"></i> Отправить код</button>
+          <button id="btn-manual-login" class="btn btn-outline-light" style="display:none"><i class="bi bi-window"></i> Войти вручную в окне</button>
+        </div>
+        <div class="text-secondary small mt-2" id="connect-hint"></div>
       </div>
-      <div class="toolbar">
-        <button id="btn-connect" class="btn btn-primary"><i class="bi bi-box-arrow-in-right"></i> Получить код по SMS</button>
-        <button id="btn-send-sms" class="btn btn-success" style="display:none"><i class="bi bi-check2"></i> Отправить код</button>
+
+      <div class="toolbar mt-2">
+        <button id="btn-relogin" class="btn btn-outline-light" style="display:none"><i class="bi bi-arrow-repeat"></i> Сменить аккаунт</button>
         <span class="spacer"></span>
         <button id="btn-disconnect" class="btn btn-danger">Отключить</button>
       </div>
-      <div class="text-secondary small mt-2" id="connect-hint">
-        Вход по номеру: введите телефон → придёт SMS с кодом → введите код.
-        Вход по почте: email и пароль. Логин/пароль хранятся в зашифрованном виде
-        и используются только для входа на hh.ru. Если появится капча — нажмите
-        «Показать окно браузера».
+      <div class="text-secondary small mt-2">
+        Логин/пароль хранятся в зашифрованном виде и используются только для входа на
+        выбранный сайт. Если появится капча — нажмите «Войти вручную в окне».
       </div>
       </div>
     </section>
@@ -295,6 +308,23 @@
       </div>
     </section>
   </main>
+
+  <!-- Окно «требуется пройти капчу» (поверх всего) -->
+  <div id="captcha-modal" class="app-modal" style="display:none">
+    <div class="app-modal-box card">
+      <div class="card-body">
+        <div class="modal-title h5"><i class="bi bi-shield-exclamation text-warning"></i> Требуется пройти капчу</div>
+        <div id="captcha-modal-text" class="text-secondary mb-3">
+          Сайт показал капчу — её нужно пройти вручную. Нажмите кнопку: откроется окно
+          браузера на странице входа. Пройдите капчу, введите телефон и код — вход сохранится.
+        </div>
+        <div class="d-flex justify-content-end gap-2">
+          <button id="captcha-cancel" class="btn btn-secondary">Позже</button>
+          <button id="captcha-open" class="btn btn-warning"><i class="bi bi-window"></i> Пройти капчу</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Окно подтверждения авто-откликов -->
   <div id="modal" class="app-modal" style="display:none">

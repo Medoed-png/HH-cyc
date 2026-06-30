@@ -54,11 +54,52 @@ class ConfigField:
     help: str = ""
 
 
+@dataclass
+class LoginMethod:
+    """Один способ входа на сайт (драйвит UI подключения аккаунта).
+
+    id      — phone | email | manual | external (или произвольный код способа).
+    fields  — какие поля показывать пользователю; подмножество
+              {"username", "password", "sms_code"}. Пустой список = вход без
+              ввода данных (ручной/через внешний сервис, открывается окно браузера).
+    """
+
+    id: str
+    label: str
+    fields: list[str] = field(default_factory=list)
+    hint: str = ""
+
+
+# Готовые конструкторы типовых способов входа (переиспользуют адаптеры).
+def login_method_phone() -> LoginMethod:
+    return LoginMethod("phone", "По номеру телефона", ["username", "sms_code"],
+                       "Введите телефон → придёт код в SMS → введите код.")
+
+
+def login_method_email() -> LoginMethod:
+    return LoginMethod("email", "По почте", ["username", "password"],
+                       "Email и пароль от аккаунта сайта.")
+
+
+def login_method_manual() -> LoginMethod:
+    return LoginMethod("manual", "Войти вручную в окне", [],
+                       "Откроется окно браузера на странице входа — войдите сами, "
+                       "сессия сохранится.")
+
+
+def login_method_external(service: str = "Госуслуги") -> LoginMethod:
+    return LoginMethod("external", f"Войти через {service}", [],
+                       f"Вход только через {service} вручную в окне браузера.")
+
+
 class SiteAdapter(ABC):
     """Базовый класс адаптера сайта. Все методы работают с переданной `page`."""
 
     site_id: str = ""           # машинный id, напр. "hh"
     display_name: str = ""      # человекочитаемое имя, напр. "hh.ru"
+    # Иконка для ряда подключения аккаунтов в UI (цветной бейдж-буква, без файлов).
+    icon_label: str = ""        # 1–3 буквы для бейджа (если пусто — две буквы имени)
+    icon_color: str = "#6c757d" # hex-цвет фона бейджа
 
     # --- идентификация / URL ---
     @property
@@ -73,6 +114,14 @@ class SiteAdapter(ABC):
     @abstractmethod
     def open_manual_login(self, page: "Page") -> None:
         """Открыть страницу входа для ручной авторизации (фолбэк)."""
+
+    def login_methods(self) -> list["LoginMethod"]:
+        """Способы входа на сайт (драйвит UI подключения аккаунта).
+
+        По умолчанию — только ручной вход в окне браузера. Сайты с серверным
+        логином переопределяют (напр. hh: телефон/почта). Источник истины для UI.
+        """
+        return [login_method_manual()]
 
     # Серверный логин по логину/паролю + SMS — реализуется в M5.
     def login_with_credentials(self, page: "Page", username: str, password: str,

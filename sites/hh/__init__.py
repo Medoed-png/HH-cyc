@@ -23,7 +23,10 @@ from hh_bot.config import Criteria
 from hh_bot.models import Vacancy
 from hh_bot.storage import Storage
 
-from ..base import SiteAdapter, LoginResult, LoginStatus
+from ..base import (
+    SiteAdapter, LoginResult, LoginStatus,
+    LoginMethod, login_method_phone, login_method_email,
+)
 
 Log = Callable[[str], None]
 
@@ -38,23 +41,49 @@ _MAJOR_CITIES = {
 class HHAdapter(SiteAdapter):
     site_id = "hh"
     display_name = "hh.ru"
+    icon_label = "hh"
+    icon_color = "#d6001c"
 
     @property
     def base_url(self) -> str:
         return selectors.BASE
 
+    # --- способы входа (серверный вход реализован: телефон/почта) ---
+    def login_methods(self) -> list[LoginMethod]:
+        return [login_method_phone(), login_method_email()]
+
     # --- авторизация ---
     def is_logged_in(self, page: Page) -> bool:
-        """Открыть страницу, требующую входа: гостя редиректит на /account/login."""
+        """Залогинен ли пользователь.
+
+        hh.ru БОЛЬШЕ НЕ редиректит гостя с /applicant/resumes на /account/login —
+        отдаёт «гостевую» версию страницы. Поэтому проверки только по URL мало
+        (ложный «вошёл» при истёкшей сессии → отклики/ответы пустые). Проверяем
+        наличие маркера личного кабинета в шапке (меню профиля/резюме).
+        """
         if page is None:
             return False
         page.goto(selectors.BASE + "/applicant/resumes", wait_until="domcontentloaded")
-        page.wait_for_timeout(800)
-        url = page.url
-        return "/account/login" not in url and "/auth/" not in url
+        page.wait_for_timeout(900)
+        if "/account/login" in page.url or "/auth/" in page.url:
+            return False
+        try:
+            return page.locator(selectors.LOGGED_IN_MARKER).count() > 0
+        except Exception:  # noqa: BLE001
+            return False
 
     def open_manual_login(self, page: Page) -> None:
-        page.goto(selectors.BASE + "/account/login", wait_until="domcontentloaded")
+        page.goto(selectors.LOGIN_URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(1200)
+        # Устаревшие cookies редиректят /account/login на главную — форма входа не
+        # открывается; чистим cookies и открываем страницу входа заново.
+        if (not self._has(page, selectors.LOGIN_SUBMIT)
+                and "/account/login" not in page.url):
+            try:
+                page.context.clear_cookies()
+            except Exception:  # noqa: BLE001
+                pass
+            page.goto(selectors.LOGIN_URL, wait_until="domcontentloaded")
 
     # --- серверный логин по логину/паролю + код (M5b) ---
     def _logged_in_now(self, page: Page) -> bool:
@@ -94,8 +123,25 @@ class HHAdapter(SiteAdapter):
             log("Уже авторизованы на hh.ru.")
             return LoginResult(LoginStatus.OK)
 
-        # Шаг 1: тип «соискатель» уже выбран по умолчанию; жмём «Войти».
-        if not self._click(page, selectors.LOGIN_SUBMIT):
+        # Устаревшие cookies заставляют hh редиректить /account/login на главную —
+        # форма входа не открывается («не нашёл кнопку Войти»). Чистим cookies и
+        # открываем страницу входа заново.
+        if not self._has(page, selectors.LOGIN_SUBMIT):
+            log("Форма входа не открылась — сбрасываю старую сессию hh.ru…")
+            try:
+                page.context.clear_cookies()
+            except Exception:  # noqa: BLE001
+                pass
+            page.goto(selectors.LOGIN_URL, wait_until="domcontentloaded")
+            page.wait_for_timeout(1500)
+
+        # Закрыть баннер cookie, если он перекрывает кнопки.
+        self._click(page, '[data-qa="cookies-policy-informer-accept"]', timeout=2000)
+
+        # Шаг 1: тип «соискатель» уже выбран по умолчанию; жмём «Войти»
+        # (обычный клик, при перекрытии оверлеем — форс-клик).
+        if not (self._click(page, selectors.LOGIN_SUBMIT)
+                or self._click(page, selectors.LOGIN_SUBMIT, force=True)):
             log("Не нашёл кнопку «Войти» на форме hh.ru (проверьте селекторы).")
             return LoginResult(LoginStatus.FAILED, "нет кнопки входа")
         page.wait_for_timeout(1500)
@@ -136,6 +182,8 @@ class HHAdapter(SiteAdapter):
         else:
             # Пароль не задан — запрашиваем код: жмём «Дальше» (hh пришлёт SMS/письмо).
             log("Пароль не задан — вхожу по коду из SMS/письма.")
+            # Пауза «по-человечески» перед запросом кода — реже триггерит анти-бот/капчу.
+            antiban.human_pause(0.8, 2.0)
             self._click(page, selectors.LOGIN_SUBMIT)  # «Дальше»
         page.wait_for_timeout(2800)
         return self._classify_login_state(page, log)
@@ -168,19 +216,70 @@ class HHAdapter(SiteAdapter):
                 page.wait_for_timeout(120)
         except Exception:  # noqa: BLE001
             return LoginResult(LoginStatus.FAILED, "не удалось ввести код")
-        page.wait_for_timeout(3000)  # автоотправка pincode
+        page.wait_for_timeout(2500)  # автоотправка pincode
         self._click(page, selectors.LOGIN_CODE_SUBMIT)  # no-op, если кнопки нет
-        page.wait_for_timeout(1500)
-        return self._classify_login_state(page, log)
+
+        # После верного кода hh делает редирект — он не мгновенный. Ждём итог:
+        # либо появился маркер входа, либо ушли со страницы логина, либо ошибка/капча.
+        for _ in range(16):  # до ~8 секунд
+            page.wait_for_timeout(500)
+            if self._logged_in_now(page):
+                break
+            if "/account/login" not in page.url and "/auth/" not in page.url:
+                break
+            if self._captcha_present(page) or self._has(page, selectors.LOGIN_ERROR):
+                break
+
+        result = self._classify_login_state(page, log)
+        # Подстраховка: вход мог пройти, но маркер не успел отрисоваться на текущей
+        # (переходной) странице — перепроверяем полноценной навигацией.
+        if result.status == LoginStatus.FAILED:
+            try:
+                if self.is_logged_in(page):
+                    log("Вход на hh.ru выполнен.")
+                    return LoginResult(LoginStatus.OK)
+            except Exception:  # noqa: BLE001
+                pass
+            self._log_login_state(page, log)  # диагностика «неизвестного» состояния
+        return result
+
+    def _log_login_state(self, page: Page, log: Log) -> None:
+        """Диагностика непонятного состояния формы входа (для лога)."""
+        try:
+            url = page.url[:90]
+            btns = page.eval_on_selector_all(
+                "button,[role=button]",
+                "els=>els.filter(e=>e.offsetParent).map(e=>(e.getAttribute('data-qa')"
+                "||(e.innerText||'').trim().slice(0,24))).filter(Boolean).slice(0,10)")
+            errs = page.eval_on_selector_all(
+                '[data-qa*="error"]',
+                "els=>els.filter(e=>e.offsetParent).map(e=>(e.innerText||'')"
+                ".trim().slice(0,80)).filter(Boolean).slice(0,5)")
+            log(f"[диагностика входа] url={url} | кнопки={btns} | ошибки={errs}")
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _captcha_present(self, page: Page) -> bool:
+        """Капча на форме входа (по data-qa-маркерам или по тексту страницы)."""
+        if self._has(page, selectors.CAPTCHA):
+            return True
+        try:
+            body = (page.inner_text("body") or "").lower()
+            return any(t in body for t in selectors.CAPTCHA_TEXT)
+        except Exception:  # noqa: BLE001
+            return False
 
     def _classify_login_state(self, page: Page, log: Log) -> LoginResult:
         """Определить итог попытки входа по текущему состоянию страницы."""
         if self._logged_in_now(page):
             log("Вход на hh.ru выполнен.")
             return LoginResult(LoginStatus.OK)
-        if self._has(page, selectors.CAPTCHA):
-            log("hh.ru показал капчу — нужен ручной ввод (кнопка «Показать окно»).")
-            return LoginResult(LoginStatus.CAPTCHA_REQUIRED)
+        # Капчу проверяем ДО ошибки логина: hh показывает «Текст с картинки» как
+        # form-helper-error, иначе её ошибочно приняли бы за неверный логин/пароль.
+        if self._captcha_present(page):
+            log("hh.ru показал капчу «Текст с картинки» — её нужно пройти вручную: "
+                "нажмите «Войти вручную в окне», решите капчу и введите телефон/код.")
+            return LoginResult(LoginStatus.CAPTCHA_REQUIRED, "требуется капча")
         if self._code_step_present(page):
             log("hh.ru запросил код подтверждения (SMS/письмо).")
             return LoginResult(LoginStatus.SMS_REQUIRED)

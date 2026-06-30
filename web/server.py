@@ -176,6 +176,23 @@ def api_sites(user: User = Depends(current_user)):
     return list_sites()
 
 
+@app.get("/api/login_methods")
+def api_login_methods(request: Request, user: User = Depends(current_user)):
+    """Способы входа выбранного сайта (драйвит UI подключения аккаунта).
+
+    Источник истины — adapter.login_methods(). Возвращает [{id,label,fields,hint}].
+    """
+    from dataclasses import asdict
+    site = _site(request=request)
+    if site == ALL_SITES:
+        return []
+    try:
+        adapter = get_adapter(site)
+    except KeyError:
+        return []
+    return [asdict(m) for m in adapter.login_methods()]
+
+
 @app.get("/api/config")
 def api_config(request: Request, user: User = Depends(current_user)):
     """Текущие критерии пользователя для заполнения формы."""

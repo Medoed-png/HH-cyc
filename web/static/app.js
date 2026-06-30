@@ -239,35 +239,77 @@ function statusBadge(status) {
   return `<span class="badge ${cls}">${status}</span>`;
 }
 
-function renderResponses(items, unread) {
-  // Полоса с числом непрочитанных сообщений.
-  const bar = $("resp-unread");
-  if (unread > 0) {
-    bar.style.display = "block";
-    bar.innerHTML = `<i class="bi bi-chat-dots"></i> У вас ${unread} непрочитанных сообщений — нажмите «Посмотреть ответ», чтобы прочитать на hh.ru.`;
-  } else {
-    bar.style.display = "none";
-  }
+// «Просмотренные» отклики (где вы уже открывали ответ) — чтобы подсветка «новый
+// ответ» гасла и не возвращалась после обновления. Храним ключи site:id.
+const RESP_SEEN_KEY = "hh_resp_seen";
+let respSeen = new Set();
+try { respSeen = new Set(JSON.parse(localStorage.getItem(RESP_SEEN_KEY) || "[]")); } catch (e) {}
+function respKey(r) { return currentSite + ":" + r.id; }
+function isNewResponse(r) { return !!r.responded && !respSeen.has(respKey(r)); }
+let _lastUnread = 0;
 
+// Плашка-счётчик сверху: сколько новых ответов и непрочитанных сообщений.
+function renderUnreadBar(newCount, unread) {
+  const bar = $("resp-unread");
+  if (!bar) return;
+  if (newCount <= 0 && unread <= 0) { bar.style.display = "none"; return; }
+  bar.style.display = "block";
+  const parts = [];
+  if (newCount > 0) parts.push(`<b>${newCount}</b> ${plural(newCount, "новый ответ", "новых ответа", "новых ответов")}`);
+  if (unread > 0) parts.push(`${unread} непрочитанных сообщений`);
+  bar.innerHTML = `<i class="bi bi-chat-dots"></i> ` + parts.join(" · ") +
+    ` — подсвеченные строки содержат новый ответ; откройте «Посмотреть ответ», и подсветка пропадёт.`;
+}
+
+// Пересчитать число новых (после того как один ответ открыли) и обновить плашку.
+function updateNewCountBar() {
+  const newCount = [...respById.values()].filter(isNewResponse).length;
+  renderUnreadBar(newCount, _lastUnread);
+}
+function markRespSeen(r) {
+  const k = respKey(r);
+  if (respSeen.has(k)) return;
+  respSeen.add(k);
+  try { localStorage.setItem(RESP_SEEN_KEY, JSON.stringify([...respSeen])); } catch (e) {}
+}
+
+function renderResponses(items, unread) {
   const body = $("resp-body");
   body.innerHTML = "";
   chatCache.clear(); openPanels.clear(); respById.clear();
   if (!items.length) {
+    $("resp-unread").style.display = "none";
     body.innerHTML = '<tr><td colspan="5" class="muted-cell">Ответов пока нет.</td></tr>';
     return;
   }
+  _lastUnread = unread || 0;
+  renderUnreadBar(items.filter(isNewResponse).length, _lastUnread);
+
   for (const r of items) {
     respById.set(r.id, r);
     const tr = document.createElement("tr");
-    const btnCls = r.responded ? "btn btn-sm btn-primary" : "btn btn-sm btn-outline-secondary";
+    const isNew = isNewResponse(r);
+    if (isNew) tr.classList.add("resp-new");
+    const newBadge = isNew ? '<span class="resp-new-dot" title="Новый ответ"></span>' : "";
+    const btnCls = isNew ? "btn btn-sm btn-success"
+                         : (r.responded ? "btn btn-sm btn-primary" : "btn btn-sm btn-outline-secondary");
+    const btnText = isNew ? "Открыть новый ответ" : "Посмотреть ответ";
     tr.innerHTML =
-      `<td>${r.title}</td><td>${r.company || ""}</td><td>${r.date || ""}</td>` +
+      `<td>${newBadge}${r.title}</td><td>${r.company || ""}</td><td>${r.date || ""}</td>` +
       `<td>${statusBadge(r.status)}</td>` +
-      `<td><button class="${btnCls}">Посмотреть ответ</button></td>`;
+      `<td><button class="${btnCls}">${btnText}</button></td>`;
     tr.addEventListener("dblclick", () => window.open(r.url, "_blank"));
     tr.querySelector("button").addEventListener("click", () => toggleMessages(tr, r));
     body.appendChild(tr);
   }
+}
+
+// Склонение русских числительных: plural(n, "ответ","ответа","ответов").
+function plural(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+  return many;
 }
 
 function buildMessages(panel, messages, url) {
@@ -314,6 +356,15 @@ function toggleMessages(tr, r) {
     openPanels.delete(r.id);
     return;
   }
+  // Открыли ответ — гасим подсветку «новый» (запоминаем как просмотренный).
+  markRespSeen(r);
+  tr.classList.remove("resp-new");
+  const dot = tr.querySelector(".resp-new-dot");
+  if (dot) dot.remove();
+  const btn = tr.querySelector("button");
+  if (btn) { btn.className = "btn btn-sm btn-primary"; btn.textContent = "Посмотреть ответ"; }
+  // Обновить плашку-счётчик новых сверху.
+  updateNewCountBar();
   const row = document.createElement("tr");
   row.className = "msg-row";
   const td = document.createElement("td");
@@ -340,53 +391,206 @@ function onChatLoaded(vacancyId, messages) {
   if (panel && r) buildMessages(panel, messages, r.url);
 }
 
-// ---------- подключение аккаунта hh.ru ----------
+// ---------- подключение аккаунтов площадок ----------
 const CONN_LABELS = {
   connected: ["● подключён", "b-green"],
   needs_sms: ["● нужен код из SMS", "b-blue"],
-  needs_captcha: ["● нужна капча", "b-red"],
+  // Капчей занимается всплывающее окно (showCaptchaModal) — постоянный бейдж
+  // «нужна капча» не показываем, оставляем нейтральный статус.
+  needs_captcha: ["не подключён", "b-gray"],
   invalid: ["не подключён", "b-gray"],
 };
 
-// Способ входа: 'phone' (только номер -> код по SMS) или 'email' (email + пароль).
-let connectMode = "phone";
+// Площадка, для которой сейчас открыта форма подключения (независимо от сайта поиска).
+let connectSite = currentSite;
+let connectMethods = [];      // способы входа выбранной площадки (из /api/login_methods)
+let connectMode = null;       // id выбранного способа входа
+let _lastConn = { status: "invalid" };  // последний статус подключения connectSite
 
-function setConnectMode(mode) {
-  connectMode = mode;
-  const phone = mode === "phone";
-  $("mode-phone").className = "btn " + (phone ? "btn-primary active" : "btn-outline-primary");
-  $("mode-email").className = "btn " + (!phone ? "btn-primary active" : "btn-outline-primary");
-  // Пароль — только для входа по почте.
-  $("password-label").style.display = phone ? "none" : "";
-  $("password-field").style.display = phone ? "none" : "";
-  // Подписи/плейсхолдеры поля логина и кнопки.
-  $("username-label").textContent = phone ? "Номер телефона" : "Email";
-  $("hh-username").placeholder = phone ? "+7…" : "you@example.com";
-  $("hh-username").type = phone ? "tel" : "email";
-  $("btn-connect").innerHTML = phone
+function currentMethod() {
+  return connectMethods.find(m => m.id === connectMode) || connectMethods[0]
+    || { id: "manual", label: "Войти вручную в окне", fields: [], hint: "" };
+}
+
+function methodIcon(id) {
+  if (id === "phone") return '<i class="bi bi-telephone"></i>';
+  if (id === "email") return '<i class="bi bi-envelope"></i>';
+  return '<i class="bi bi-window"></i>';
+}
+
+// Ряд бейджей площадок: цветная буква + название + точка статуса.
+function renderSiteBadges(sites) {
+  const box = $("connect-sites");
+  box.innerHTML = "";
+  sites.filter(s => s.id !== ALL_SITES).forEach(s => {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "site-badge";
+    el.dataset.site = s.id;
+    el.innerHTML =
+      `<span class="site-ic" style="background:${s.icon_color || "#6c757d"}">${s.icon_label || s.display_name.slice(0, 2)}</span>` +
+      `<span class="site-nm">${s.display_name}</span>` +
+      `<span class="site-dot" data-dot="${s.id}"></span>`;
+    el.onclick = () => selectConnectSite(s.id);
+    box.appendChild(el);
+  });
+}
+
+// Состояние каждой площадки: статус кред (conn) + фактический вход (loggedIn).
+// Точка зелёная, если вход выполнен ЛИБО креды подключены (даже вход по cookies).
+const siteState = {};  // siteId -> { conn: "invalid", loggedIn: false }
+function _st(siteId) { return (siteState[siteId] || (siteState[siteId] = { conn: "invalid", loggedIn: false })); }
+
+function paintDot(siteId) {
+  const dot = document.querySelector(`.site-dot[data-dot="${siteId}"]`);
+  if (!dot) return;
+  const s = _st(siteId);
+  let cls = "", title = "не подключён";
+  if (s.loggedIn || s.conn === "connected") { cls = "on"; title = "● вход выполнен"; }
+  else if (s.conn === "needs_sms") { cls = "warn"; title = "● нужен код из SMS"; }
+  dot.className = "site-dot " + cls;
+  dot.title = title;
+}
+
+function setSiteConn(siteId, status) { _st(siteId).conn = status; paintDot(siteId); }
+function setSiteLoggedIn(siteId, loggedIn) { _st(siteId).loggedIn = !!loggedIn; paintDot(siteId); }
+
+// Кнопки-режимы способов входа выбранной площадки.
+function renderConnectModes(methods) {
+  const box = $("connect-modes");
+  box.innerHTML = "";
+  methods.forEach((m, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.mid = m.id;
+    b.className = "btn " + (i === 0 ? "btn-primary active" : "btn-outline-primary");
+    b.innerHTML = methodIcon(m.id) + " " + m.label;
+    b.onclick = () => setConnectMode(m.id);
+    box.appendChild(b);
+  });
+  box.style.display = methods.length > 1 ? "" : "none";  // один способ — выбор не нужен
+}
+
+function setConnectMode(id) {
+  connectMode = id;
+  $("connect-modes").querySelectorAll("button").forEach(b => {
+    const on = b.dataset.mid === id;
+    b.className = "btn " + (on ? "btn-primary active" : "btn-outline-primary");
+  });
+  renderConnectFields(currentMethod());
+}
+
+// Показать поля и кнопки под выбранный способ входа.
+function renderConnectFields(m) {
+  const f = m.fields || [];
+  const hasUser = f.includes("username");
+  const hasPass = f.includes("password");
+  const hasSms = f.includes("sms_code");
+  const credential = hasUser || hasPass;  // способ с вводом данных vs ручной/внешний
+
+  $("password-label").style.display = hasPass ? "" : "none";
+  $("password-field").style.display = hasPass ? "" : "none";
+
+  const userField = $("hh-username").closest(".field");
+  $("username-label").style.display = hasUser ? "" : "none";
+  if (userField) userField.style.display = hasUser ? "" : "none";
+  if (hasUser) {
+    const phone = m.id === "phone";
+    $("username-label").textContent = phone ? "Номер телефона" : (m.id === "email" ? "Email" : "Логин");
+    $("hh-username").placeholder = phone ? "+7…" : (m.id === "email" ? "you@example.com" : "");
+    $("hh-username").type = phone ? "tel" : (m.id === "email" ? "email" : "text");
+  }
+
+  // Кнопка входа: для способов с данными — «Войти»/«Получить код»; иначе — ручной вход.
+  $("btn-connect").style.display = credential ? "" : "none";
+  $("btn-manual-login").style.display = credential ? "none" : "";
+  $("btn-connect").innerHTML = (hasSms && !hasPass)
     ? '<i class="bi bi-box-arrow-in-right"></i> Получить код по SMS'
     : '<i class="bi bi-box-arrow-in-right"></i> Войти';
+  $("connect-hint").textContent = m.hint || "";
+}
+
+// Подключён ли реально выбранный сайт (по статусу кред или по фактическому входу).
+function effectiveConnected(st) {
+  return (st && st.status === "connected") || _st(connectSite).loggedIn;
+}
+
+function togglePanelConnected(connected) {
+  $("connect-login").style.display = connected ? "none" : "";
+  $("connect-connected").style.display = connected ? "" : "none";
+  $("btn-relogin").style.display = connected ? "" : "none";
 }
 
 function renderConnStatus(st) {
+  _lastConn = st || { status: "invalid" };
+  setSiteConn(connectSite, _lastConn.status);
   const badge = $("conn-badge");
-  const [text, cls] = CONN_LABELS[st.status] || CONN_LABELS.invalid;
+  const [text, cls] = CONN_LABELS[_lastConn.status] || CONN_LABELS.invalid;
   badge.className = "badge " + cls;
   badge.textContent = text;
-  if (st.username && !$("hh-username").value) $("hh-username").value = st.username;
+  if (_lastConn.username && !$("hh-username").value) $("hh-username").value = _lastConn.username;
   // Поле кода и кнопка «Отправить код» — только когда сайт запросил код.
-  const needSms = st.status === "needs_sms";
+  const needSms = _lastConn.status === "needs_sms";
   $("sms-label").style.display = needSms ? "" : "none";
   $("sms-field").style.display = needSms ? "" : "none";
   $("btn-send-sms").style.display = needSms ? "" : "none";
+  togglePanelConnected(effectiveConnected(_lastConn));
   if (needSms) $("hh-sms").focus();
 }
 
-async function loadConnStatus() {
+// Загрузить статус подключения сайта (для точки и, если это выбранный сайт, для панели).
+async function loadConnStatusFor(siteId) {
   try {
-    const st = await (await authFetch("/api/conn_status?site=" + currentSite)).json();
-    renderConnStatus(st);
+    const st = await (await authFetch("/api/conn_status?site=" + siteId)).json();
+    setSiteConn(siteId, st.status);
+    if (siteId === connectSite) renderConnStatus(st);
   } catch (e) { /* не критично */ }
+}
+
+// Выбрать площадку для подключения: загрузить её способы входа и статус.
+async function selectConnectSite(siteId) {
+  connectSite = siteId;
+  $("connect-sites").querySelectorAll(".site-badge").forEach(el =>
+    el.classList.toggle("selected", el.dataset.site === siteId));
+  $("connect-site-title").textContent = "Аккаунт: " + (SITE_NAMES[siteId] || siteId);
+  try {
+    connectMethods = await (await authFetch("/api/login_methods?site=" + siteId)).json();
+  } catch (e) { connectMethods = []; }
+  if (!connectMethods || !connectMethods.length) {
+    connectMethods = [{ id: "manual", label: "Войти вручную в окне", fields: [], hint: "" }];
+  }
+  renderConnectModes(connectMethods);
+  setConnectMode(connectMethods[0].id);
+  loadConnStatusFor(siteId);
+}
+
+// ---------- капча: всплывающее окно поверх всего + системное уведомление ----------
+let captchaSite = null;
+
+function showCaptchaModal(site) {
+  captchaSite = site || connectSite || currentSite;
+  const name = SITE_NAMES[captchaSite] || captchaSite || "сайт";
+  const t = $("captcha-modal-text");
+  if (t) t.innerHTML =
+    `Сайт <b>${name}</b> показал капчу — её нужно пройти вручную. ` +
+    `Нажмите «Пройти капчу»: откроется окно браузера на странице входа. ` +
+    `Пройдите капчу, введите телефон и код — вход сохранится.`;
+  $("captcha-modal").style.display = "flex";
+  try { window.focus(); } catch (e) { /* no-op */ }
+  notifyCaptcha(name);  // системное уведомление поверх других окон (если разрешено)
+}
+
+function hideCaptchaModal() { $("captcha-modal").style.display = "none"; }
+
+function notifyCaptcha(name) {
+  try {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const n = new Notification("HH-бот: требуется пройти капчу", {
+      body: `Сайт ${name}: нажмите «Пройти капчу», чтобы открыть браузер и войти.`,
+      requireInteraction: true,
+    });
+    n.onclick = () => { try { window.focus(); } catch (e) {} n.close(); };
+  } catch (e) { /* no-op */ }
 }
 
 // Список сайтов в выпадающий селектор; смена сайта переключает весь контекст.
@@ -403,13 +607,18 @@ async function loadSites() {
   }
   if (!sites.some(s => s.id === currentSite)) currentSite = (sites[0] || {}).id || "hh";
   sel.value = currentSite;
+  // Ряд бейджей площадок для подключения аккаунтов + точки статуса.
+  renderSiteBadges(sites);
+  sites.filter(s => s.id !== ALL_SITES).forEach(s => loadConnStatusFor(s.id));
+  const startSite = (currentSite !== ALL_SITES) ? currentSite
+    : (sites.find(s => s.id !== ALL_SITES) || {}).id || "hh";
+  selectConnectSite(startSite);
   sel.onchange = () => {
     currentSite = sel.value;
     localStorage.setItem("hh_site", currentSite);
     clearTable();
-    setStatus(false);          // мгновенно поправить шапку/панель под новый режим
+    setStatus(false);          // мгновенно поправить шапку под новый режим
     loadConfig();
-    loadConnStatus();
     loadStats();
     if (currentSite !== ALL_SITES) api("/api/check_login").catch(() => {});
   };
@@ -513,18 +722,32 @@ function connectEvents() {
   const es = new EventSource("/api/events?token=" + encodeURIComponent(getToken()));
   es.onmessage = (e) => {
     const msg = JSON.parse(e.data);
-    // События приходят от всех сессий пользователя; в режиме «все сайты» показываем
-    // все, иначе только выбранный сайт.
+    // Статус подключения относится к панели подключения (её сайт connectSite),
+    // а не к сайту поиска — обрабатываем отдельно, до фильтра по currentSite.
+    if (msg.type === "conn_status") {
+      if (msg.site) setSiteConn(msg.site, msg.status);
+      if (!msg.site || msg.site === connectSite) renderConnStatus(msg);
+      if (msg.status === "needs_captcha") showCaptchaModal(msg.site);
+      return;
+    }
+    // Вход выполнен/снят — красим точку любой площадки (зелёная = вход выполнен),
+    // плюс обновляем шапку для текущего сайта поиска. Тоже до фильтра по currentSite.
+    if (msg.type === "login") {
+      if (msg.site) setSiteLoggedIn(msg.site, msg.logged_in);
+      if (!msg.site || msg.site === currentSite) setStatus(msg.logged_in);
+      if (msg.site === connectSite) togglePanelConnected(effectiveConnected(_lastConn));
+      return;
+    }
+    // Прочие события приходят от всех сессий пользователя; в режиме «все сайты»
+    // показываем все, иначе только выбранный сайт поиска.
     if (currentSite !== ALL_SITES && msg.site && msg.site !== currentSite) return;
     if (msg.type === "log") logLine(msg.text);
-    else if (msg.type === "login") setStatus(msg.logged_in);
     else if (msg.type === "vacancy") {
       upsertVacancy(msg.vacancy);
       if (msg.vacancy && msg.vacancy.status === "откликнулись") scheduleStatsRefresh();
     }
     else if (msg.type === "responses") { renderResponses(msg.items, msg.unread || 0); loadStats(); }
     else if (msg.type === "chat") onChatLoaded(msg.vacancy_id, msg.messages);
-    else if (msg.type === "conn_status") renderConnStatus(msg);
   };
   es.onerror = () => logLine("Соединение с сервером прервано, переподключаюсь…");
 }
@@ -532,27 +755,24 @@ function connectEvents() {
 function setStatus(loggedIn) {
   const el = $("status");
   // Режим «все сайты»: единый статус входа неприменим — нейтральный вид,
-  // подключение/переподключение скрыты (вход настраивается на конкретном сайте).
+  // «Сменить аккаунт» в шапке скрыт (вход настраивается на конкретном сайте).
+  // Карточка подключения остаётся видимой — в ней можно подключить любой сайт.
   if (currentSite === ALL_SITES) {
     _loggedIn = false;
     el.className = "status muted";
     el.textContent = "🌐 поиск по всем сайтам";
-    if ($("connect-card")) $("connect-card").style.display = "none";
     if ($("btn-reconnect")) $("btn-reconnect").style.display = "none";
     return;
   }
   _loggedIn = loggedIn;  // для авто-обновления ответов (только когда вошли)
   el.className = "status " + (loggedIn ? "ok" : "bad");
   el.textContent = loggedIn ? "● вы вошли" : "● не авторизованы";
-  // Карточка подключения нужна только когда пользователь НЕ вошёл. Если он уже
-  // залогинен (например, по сохранённым cookies) — прячем, чтобы не сбивать
-  // повторным вводом логина/пароля от hh.ru.
-  const card = $("connect-card");
-  if (card) card.style.display = loggedIn ? "none" : "";
-  // Кнопка «Подключить аккаунт» — наоборот, видна только когда уже вошли
-  // (даёт выйти из сайта и подключить другой аккаунт по логину/паролю).
+  // Кнопка «Сменить аккаунт» в шапке — видна, когда вошли на сайте поиска.
   const rb = $("btn-reconnect");
   if (rb) rb.style.display = loggedIn ? "" : "none";
+  // Если форма подключения открыта на том же сайте — отразить вход (вход мог
+  // случиться по сохранённым cookies, без серверного логина).
+  if (connectSite === currentSite) togglePanelConnected(effectiveConnected(_lastConn));
 }
 
 // ---------- сворачивание разделов ----------
@@ -617,50 +837,66 @@ function bindButtons() {
     api("/api/show_browser");
   };
   $("btn-reconnect").onclick = () => {
-    logLine("Выход из аккаунта. Введите логин (телефон или email) в карточке «Подключение аккаунта» и нажмите «Подключить» — придёт код.");
-    api("/api/logout_site");  // сбросит cookies -> придёт login=false -> покажется панель
-    // Сразу показать форму подключения и подвести к ней.
+    // Подвести к карточке подключения для сайта поиска и сбросить вход (смена аккаунта).
+    selectConnectSite(currentSite);
     const card = $("connect-card");
     if (card) {
-      card.style.display = "";
       card.classList.remove("collapsed");
       card.scrollIntoView({ behavior: "smooth", block: "center" });
     }
+    logLine("Выход из аккаунта " + (SITE_NAMES[currentSite] || currentSite) + " — введите данные заново.");
+    api("/api/logout_site", { site: currentSite });
+    togglePanelConnected(false);
   };
   $("all_pages").onchange = applyAllPagesState;
-  $("mode-phone").onclick = () => setConnectMode("phone");
-  $("mode-email").onclick = () => setConnectMode("email");
+  // Кнопки способов входа строятся динамически (renderConnectModes) под каждый сайт.
   $("btn-connect").onclick = () => {
+    const m = currentMethod();
+    const f = m.fields || [];
     const username = $("hh-username").value.trim();
-    if (!username) {
-      logLine(connectMode === "phone" ? "Укажите номер телефона." : "Укажите email.");
-      return;
-    }
-    if (connectMode === "email") {
+    if (f.includes("username") && !username) { logLine("Укажите логин (телефон или email)."); return; }
+    const body = { site: connectSite, username };
+    if (f.includes("password")) {
       const password = $("hh-password").value;
-      if (!password) { logLine("Для входа по почте укажите пароль."); return; }
-      logLine("Вхожу на hh.ru по почте…");
-      api("/api/connect", { username, password });
+      if (!password) { logLine("Укажите пароль."); return; }
+      body.password = password;
+      logLine("Вхожу на " + (SITE_NAMES[connectSite] || connectSite) + "…");
     } else {
-      // Вход по номеру: без пароля -> hh.ru пришлёт код по SMS.
-      logLine("Отправляю запрос на SMS-код для " + username + "…");
-      api("/api/connect", { username, password: "" });
+      // Вход по коду: без пароля -> сайт пришлёт код по SMS/письму.
+      body.password = "";
+      logLine("Отправляю запрос на код для " + username + "…");
     }
+    api("/api/connect", body);
+  };
+  $("btn-manual-login").onclick = () => {
+    logLine("Открываю окно браузера для входа на " + (SITE_NAMES[connectSite] || connectSite) + "…");
+    api("/api/show_browser", { site: connectSite });
+  };
+  $("btn-relogin").onclick = () => {
+    logLine("Выход из аккаунта " + (SITE_NAMES[connectSite] || connectSite) + " — войдите заново.");
+    api("/api/logout_site", { site: connectSite });
+    togglePanelConnected(false);
   };
   $("btn-send-sms").onclick = () => {
     const code = $("hh-sms").value.trim();
     if (!code) { logLine("Введите код из SMS/письма."); return; }
     logLine("Отправляю код подтверждения…");
-    api("/api/sms", { code });
+    api("/api/sms", { site: connectSite, code });
+  };
+  // Капча: кнопка «Пройти капчу» открывает видимое окно браузера на форме входа.
+  $("captcha-cancel").onclick = hideCaptchaModal;
+  $("captcha-open").onclick = () => {
+    hideCaptchaModal();
+    logLine("Открываю окно браузера для прохождения капчи…");
+    api("/api/show_browser", { site: captchaSite || connectSite });
   };
   $("btn-disconnect").onclick = async () => {
-    await api("/api/disconnect");
+    await api("/api/disconnect", { site: connectSite });
     $("hh-password").value = "";
     $("hh-sms").value = "";
-    logLine("Аккаунт hh.ru отключён.");
-    loadConnStatus();
+    logLine("Аккаунт " + (SITE_NAMES[connectSite] || connectSite) + " отключён.");
+    loadConnStatusFor(connectSite);
   };
-  setConnectMode("phone");  // по умолчанию — вход по номеру телефона
   $("btn-save-proxy").onclick = async () => {
     await api("/api/proxy", { proxy_url: $("proxy-url").value.trim() });
     $("proxy-url").value = "";
@@ -709,6 +945,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     const me = await (await authFetch("/auth/me")).json();
     $("user-email").textContent = me.email || "";
   } catch (e) { return; }  // 401 -> authFetch уже увёл на /login
+  // Разрешение на системные уведомления (чтобы окно капчи всплывало поверх всего).
+  try {
+    if ("Notification" in window && Notification.permission === "default")
+      Notification.requestPermission();
+  } catch (e) { /* no-op */ }
   await loadSites();
   setStatus(false);  // применить режим (нейтральный для «все сайты»)
   await loadConfig();
@@ -718,7 +959,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   bindModal();
   bindCollapsibles();
   connectEvents();
-  loadConnStatus();                          // статус подключения аккаунта hh.ru
+  // Статусы подключения площадок уже загружены в loadSites (бейджи + точки).
   loadProxy();                               // статус прокси пользователя
   loadTelegram();                            // статус Telegram-уведомлений
   loadStats();                               // дашборд статистики

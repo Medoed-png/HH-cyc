@@ -208,7 +208,11 @@ class BrowserSession(threading.Thread):
             credentials.set_status(self.user_id, self.site_id, credentials.STATUS_NEEDS_SMS)
         elif st == LoginStatus.CAPTCHA_REQUIRED:
             credentials.set_status(self.user_id, self.site_id, credentials.STATUS_NEEDS_CAPTCHA)
-            self._log("Нужна капча: нажмите «Показать окно браузера» и пройдите её вручную.")
+            # Капчу-картинку нельзя пройти автоматически. НЕ открываем окно сразу —
+            # шлём статус needs_captcha: дашборд покажет заметное окно с кнопкой
+            # «Пройти капчу», и уже по ней пользователь откроет видимый браузер.
+            self._log("Сайт показал капчу — нажмите «Пройти капчу» во всплывающем окне, "
+                      "чтобы открыть браузер и завершить вход.")
         else:  # BAD_CREDENTIALS | FAILED
             credentials.set_status(self.user_id, self.site_id, credentials.STATUS_INVALID)
             self.events.put((EV_LOGIN, False))
@@ -261,7 +265,8 @@ class BrowserSession(threading.Thread):
                 br.page, creds.username, creds.password, log=self._log
             )
         except NotImplementedError:
-            self._log("Серверный логин для этого сайта не реализован.")
+            self._log(f"Авто-вход для {self.adapter.display_name} пока не реализован — "
+                      f"войдите вручную: нажмите «Войти вручную в окне».")
             self.events.put((EV_DONE, "connect"))
             return
         self._handle_login_result(result)

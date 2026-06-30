@@ -119,6 +119,17 @@ def fetch_responses(page: Page, log=lambda m: None) -> dict:
     page.goto(selectors.NEGOTIATIONS_URL, wait_until="domcontentloaded")
     page.wait_for_timeout(3500)
 
+    # Истёкшая сессия: hh отдаёт «гостевую» страницу без редиректа на логин —
+    # маркера личного кабинета нет. Иначе молча вернули бы 0 ответов.
+    try:
+        logged_in = page.locator(selectors.LOGGED_IN_MARKER).count() > 0
+    except Exception:  # noqa: BLE001
+        logged_in = True
+    if not logged_in:
+        log("Сессия hh.ru истекла — ответы не загрузить. Войдите заново "
+            "(панель «Подключение аккаунтов»).")
+        return {"items": [], "unread": 0, "logged_out": True}
+
     if page.query_selector(selectors.NEG_EMPTY):
         log("Откликов пока нет.")
         return {"items": [], "unread": 0}

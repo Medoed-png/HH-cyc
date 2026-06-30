@@ -22,7 +22,10 @@ from hh_bot.models import Vacancy
 from hh_bot.storage import Storage
 
 from . import selectors
-from ..base import SiteAdapter, ConfigField
+from ..base import (
+    SiteAdapter, ConfigField,
+    LoginMethod, login_method_email, login_method_phone, login_method_manual,
+)
 
 Log = Callable[[str], None]
 
@@ -30,10 +33,16 @@ Log = Callable[[str], None]
 class SuperJobAdapter(SiteAdapter):
     site_id = "superjob"
     display_name = "SuperJob"
+    icon_label = "SJ"
+    icon_color = "#19a463"
 
     @property
     def base_url(self) -> str:
         return selectors.BASE
+
+    # --- способы входа (объявлены; серверный вход добавим со сверкой) ---
+    def login_methods(self) -> list[LoginMethod]:
+        return [login_method_email(), login_method_phone(), login_method_manual()]
 
     # --- авторизация ---
     def is_logged_in(self, page: Page) -> bool:

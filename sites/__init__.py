@@ -41,14 +41,18 @@ def get_adapter(site_id: str = DEFAULT_SITE) -> SiteAdapter:
 
 
 def list_sites(include_all: bool = True) -> list[dict]:
-    """Список сайтов для UI: [{"id", "display_name"}].
+    """Список сайтов для UI: [{"id", "display_name", "icon_label", "icon_color"}].
 
+    icon_label/icon_color — для цветного бейджа-буквы в ряду подключения аккаунтов.
     include_all — добавить в начало спец-пункт «Все сайты» (поиск сразу по всем).
     """
-    items = [{"id": sid, "display_name": cls.display_name}
+    items = [{"id": sid, "display_name": cls.display_name,
+              "icon_label": cls.icon_label or cls.display_name[:2],
+              "icon_color": cls.icon_color}
              for sid, cls in SITES.items()]
     if include_all:
-        items.insert(0, {"id": ALL_SITES, "display_name": "🌐 Все сайты"})
+        items.insert(0, {"id": ALL_SITES, "display_name": "🌐 Все сайты",
+                         "icon_label": "ВС", "icon_color": "#6c757d"})
     return items
 
 
