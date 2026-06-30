@@ -330,6 +330,26 @@ const CONN_LABELS = {
   invalid: ["не подключён", "b-gray"],
 };
 
+// Способ входа: 'phone' (только номер -> код по SMS) или 'email' (email + пароль).
+let connectMode = "phone";
+
+function setConnectMode(mode) {
+  connectMode = mode;
+  const phone = mode === "phone";
+  $("mode-phone").className = "btn " + (phone ? "btn-primary active" : "btn-outline-primary");
+  $("mode-email").className = "btn " + (!phone ? "btn-primary active" : "btn-outline-primary");
+  // Пароль — только для входа по почте.
+  $("password-label").style.display = phone ? "none" : "";
+  $("password-field").style.display = phone ? "none" : "";
+  // Подписи/плейсхолдеры поля логина и кнопки.
+  $("username-label").textContent = phone ? "Номер телефона" : "Email";
+  $("hh-username").placeholder = phone ? "+7…" : "you@example.com";
+  $("hh-username").type = phone ? "tel" : "email";
+  $("btn-connect").innerHTML = phone
+    ? '<i class="bi bi-box-arrow-in-right"></i> Получить код по SMS'
+    : '<i class="bi bi-box-arrow-in-right"></i> Войти';
+}
+
 function renderConnStatus(st) {
   const badge = $("conn-badge");
   const [text, cls] = CONN_LABELS[st.status] || CONN_LABELS.invalid;
@@ -603,14 +623,24 @@ function bindButtons() {
       card.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   };
+  $("mode-phone").onclick = () => setConnectMode("phone");
+  $("mode-email").onclick = () => setConnectMode("email");
   $("btn-connect").onclick = () => {
     const username = $("hh-username").value.trim();
-    const password = $("hh-password").value;
-    if (!username) { logLine("Укажите логин hh.ru (email или телефон)."); return; }
-    // Пароль необязателен: без него — вход по коду из SMS/письма.
-    logLine(password ? "Подключаю аккаунт hh.ru…"
-                     : "Вхожу по коду — сейчас hh.ru пришлёт код…");
-    api("/api/connect", { username, password });
+    if (!username) {
+      logLine(connectMode === "phone" ? "Укажите номер телефона." : "Укажите email.");
+      return;
+    }
+    if (connectMode === "email") {
+      const password = $("hh-password").value;
+      if (!password) { logLine("Для входа по почте укажите пароль."); return; }
+      logLine("Вхожу на hh.ru по почте…");
+      api("/api/connect", { username, password });
+    } else {
+      // Вход по номеру: без пароля -> hh.ru пришлёт код по SMS.
+      logLine("Отправляю запрос на SMS-код для " + username + "…");
+      api("/api/connect", { username, password: "" });
+    }
   };
   $("btn-send-sms").onclick = () => {
     const code = $("hh-sms").value.trim();
@@ -625,6 +655,7 @@ function bindButtons() {
     logLine("Аккаунт hh.ru отключён.");
     loadConnStatus();
   };
+  setConnectMode("phone");  // по умолчанию — вход по номеру телефона
   $("btn-save-proxy").onclick = async () => {
     await api("/api/proxy", { proxy_url: $("proxy-url").value.trim() });
     $("proxy-url").value = "";
