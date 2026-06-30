@@ -584,7 +584,6 @@ function bindButtons() {
     logLine("Открываю окно браузера…");
     api("/api/show_browser");
   };
-  $("btn-refresh-stats").onclick = loadStats;
   $("btn-reconnect").onclick = () => {
     logLine("Выход из аккаунта. Введите логин (телефон или email) в карточке «Подключение аккаунта» и нажмите «Подключить» — придёт код.");
     api("/api/logout_site");  // сбросит cookies -> придёт login=false -> покажется панель
