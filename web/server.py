@@ -193,6 +193,7 @@ def api_config(request: Request, user: User = Depends(current_user)):
         "auto_letter": crit.auto_letter,
         "daily_limit": crit.daily_limit,
         "max_pages": crit.max_pages,
+        "all_pages": crit.all_pages,
         # Фильтры поиска: experience — строка, employment/schedule — списки кодов,
         # company_blacklist — строка через запятую (как exclude_words).
         "experience": crit.experience,

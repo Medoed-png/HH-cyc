@@ -34,6 +34,8 @@ class Criteria:
     daily_limit: int = 150
     delay_seconds: list = field(default_factory=lambda: [20, 45])
     max_pages: int = 5
+    # Сканировать все страницы выдачи (игнорируя max_pages). Дольше, но полнее.
+    all_pages: bool = False
     # Строгий отбор: показывать только вакансии, где профессия/стек есть в названии.
     strict_title_match: bool = True
     # Фильтры поиска (коды hh.ru; пусто = не фильтровать). experience — одно
@@ -170,6 +172,7 @@ def from_form(data: dict, base: Criteria | None = None) -> Criteria:
     crit.auto_letter = bool(data.get("auto_letter"))
     crit.daily_limit = _to_int(data.get("daily_limit", 150), 150)
     crit.max_pages = _to_int(data.get("max_pages", 5), 5)
+    crit.all_pages = bool(data.get("all_pages"))
 
     # Фильтры поиска. experience — строка; employment/schedule — списки кодов
     # (из формы приходят строкой через запятую или списком); blacklist — список.

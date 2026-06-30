@@ -133,7 +133,15 @@
         <div class="field"><input id="daily_limit" class="form-control" type="text" autocomplete="off" placeholder="например: 150 (максимум на hh.ru ~200)"></div>
 
         <label>Макс. страниц на запрос</label>
-        <div class="field"><input id="max_pages" class="form-control" type="text" autocomplete="off" placeholder="например: 5 (на странице ~50 вакансий)"></div>
+        <div class="field">
+          <input id="max_pages" class="form-control" type="text" autocomplete="off" placeholder="например: 5 (на странице ~50 вакансий)">
+          <label class="d-inline-flex align-items-center gap-2 mt-2" style="font-weight:400;cursor:pointer">
+            <input class="form-check-input mt-0" type="checkbox" id="all_pages"> Сканировать все страницы по фильтру
+          </label>
+          <div class="text-warning small mt-1" id="all-pages-warn" style="display:none">
+            ⚠️ Будет просканирована вся выдача (десятки страниц) — это займёт заметное время.
+          </div>
+        </div>
 
         <label>Опыт работы</label>
         <div class="field">

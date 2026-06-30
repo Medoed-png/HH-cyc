@@ -24,6 +24,13 @@ function api(path, body) {
   });
 }
 
+// «Все страницы»: показать предупреждение и отключить поле max_pages (оно не нужно).
+function applyAllPagesState() {
+  const on = $("all_pages").checked;
+  $("all-pages-warn").style.display = on ? "" : "none";
+  $("max_pages").disabled = on;
+}
+
 // Значения отмеченных чекбоксов внутри контейнера по id.
 function checkedValues(containerId) {
   return Array.from($(containerId).querySelectorAll("input[type=checkbox]:checked"))
@@ -49,6 +56,7 @@ function collectForm() {
     auto_letter: $("auto_letter").checked,
     daily_limit: $("daily_limit").value,
     max_pages: $("max_pages").value,
+    all_pages: $("all_pages").checked,
     experience: $("experience").value,
     employment: checkedValues("employment"),
     schedule: checkedValues("schedule"),
@@ -82,6 +90,8 @@ async function loadConfig() {
   }
   setChecks("employment", cfg.employment);
   setChecks("schedule", cfg.schedule);
+  $("all_pages").checked = !!cfg.all_pages;
+  applyAllPagesState();
   $("strict_title_match").checked = cfg.strict_title_match !== false;  // по умолчанию вкл
   $("auto_letter").checked = !!cfg.auto_letter;
   $("autopilot_enabled").checked = !!cfg.autopilot_enabled;
@@ -617,6 +627,7 @@ function bindButtons() {
       card.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   };
+  $("all_pages").onchange = applyAllPagesState;
   $("mode-phone").onclick = () => setConnectMode("phone");
   $("mode-email").onclick = () => setConnectMode("email");
   $("btn-connect").onclick = () => {

@@ -293,6 +293,14 @@ class BrowserSession(threading.Thread):
             self._log(f"Сначала войдите на {self.adapter.display_name} (кнопка «Войти»).")
             return []
         all_found = []
+        # «Все страницы» — высокий потолок (поиск сам остановится, когда вакансии
+        # закончатся); иначе ограничиваемся max_pages.
+        if getattr(crit, "all_pages", False):
+            pages = 50  # практический предел выдачи hh.ru (~40 стр. × 50)
+            self._log("Режим «все страницы»: сканирую всю выдачу по фильтру — "
+                      "это может занять заметное время…")
+        else:
+            pages = crit.max_pages
         # Без профессии — один поиск с пустым запросом: сайт вернёт ВСЕ вакансии
         # по остальным фильтрам (регион, опыт, занятость, график/удалёнка).
         queries = crit.profession_texts or [""]
@@ -300,7 +308,7 @@ class BrowserSession(threading.Thread):
             antiban.rate_limit(self.user_id)  # разнести запросы во времени
             self._log(f"Поиск: {text or 'все вакансии (без профессии)'}")
             found = self.adapter.search(
-                br.page, text, crit.region, crit.max_pages, log=self._log,
+                br.page, text, crit.region, pages, log=self._log,
                 experience=crit.experience, employment=crit.employment,
                 schedule=crit.schedule,
             )

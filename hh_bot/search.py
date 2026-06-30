@@ -118,6 +118,7 @@ def search(page: Page, text: str, region: int, max_pages: int = 5,
            schedule=None) -> list[Vacancy]:
     """Обойти страницы выдачи по одному запросу и вернуть все вакансии."""
     found: list[Vacancy] = []
+    seen: set[str] = set()  # дедуп по url — и защита при сканировании всех страниц
     for page_num in range(max_pages):
         url = build_search_url(text, region, page_num, experience=experience,
                                employment=employment, schedule=schedule)
@@ -125,8 +126,11 @@ def search(page: Page, text: str, region: int, max_pages: int = 5,
         page.goto(url, wait_until="domcontentloaded")
         page.wait_for_timeout(1500)  # дать догрузиться JS-выдаче
         cards = parse_cards(page, text)
-        if not cards:
+        fresh = [v for v in cards if v.url not in seen]
+        if not fresh:  # пусто или повтор последней страницы — конец выдачи
             log("  Больше вакансий нет.")
             break
-        found.extend(cards)
+        for v in fresh:
+            seen.add(v.url)
+        found.extend(fresh)
     return found
