@@ -293,9 +293,12 @@ class BrowserSession(threading.Thread):
             self._log(f"Сначала войдите на {self.adapter.display_name} (кнопка «Войти»).")
             return []
         all_found = []
-        for text in crit.profession_texts:
+        # Без профессии — один поиск с пустым запросом: сайт вернёт ВСЕ вакансии
+        # по остальным фильтрам (регион, опыт, занятость, график/удалёнка).
+        queries = crit.profession_texts or [""]
+        for text in queries:
             antiban.rate_limit(self.user_id)  # разнести запросы во времени
-            self._log(f"Поиск: {text}")
+            self._log(f"Поиск: {text or 'все вакансии (без профессии)'}")
             found = self.adapter.search(
                 br.page, text, crit.region, crit.max_pages, log=self._log,
                 experience=crit.experience, employment=crit.employment,
