@@ -53,6 +53,7 @@ function collectForm() {
     employment: checkedValues("employment"),
     schedule: checkedValues("schedule"),
     company_blacklist: $("company_blacklist").value,
+    strict_title_match: $("strict_title_match").checked,
     autopilot_enabled: $("autopilot_enabled").checked,
     autopilot_interval_minutes: $("autopilot_interval_minutes").value,
   };
@@ -81,6 +82,7 @@ async function loadConfig() {
   }
   setChecks("employment", cfg.employment);
   setChecks("schedule", cfg.schedule);
+  $("strict_title_match").checked = cfg.strict_title_match !== false;  // по умолчанию вкл
   $("auto_letter").checked = !!cfg.auto_letter;
   $("autopilot_enabled").checked = !!cfg.autopilot_enabled;
   $("autopilot-badge").style.display = cfg.autopilot_enabled ? "" : "none";

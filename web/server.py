@@ -198,6 +198,7 @@ def api_config(request: Request, user: User = Depends(current_user)):
         "employment": crit.employment,
         "schedule": crit.schedule,
         "company_blacklist": ", ".join(crit.company_blacklist),
+        "strict_title_match": crit.strict_title_match,
         "autopilot_enabled": crit.autopilot_enabled,
         "autopilot_interval_minutes": crit.autopilot_interval_minutes,
     }

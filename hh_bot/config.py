@@ -177,6 +177,9 @@ def from_form(data: dict, base: Criteria | None = None) -> Criteria:
     crit.employment = _as_list(data.get("employment"))
     crit.schedule = _as_list(data.get("schedule"))
     crit.company_blacklist = _split(data.get("company_blacklist", ""))
+    # Строгий отбор по названию: чекбокс. По умолчанию (ключа нет) — включён,
+    # чтобы не ослаблять фильтр у тех, кто сохраняет форму без этого поля.
+    crit.strict_title_match = bool(data.get("strict_title_match", True))
 
     # Автопилот (чекбокс + интервал в минутах, минимум 5).
     crit.autopilot_enabled = bool(data.get("autopilot_enabled"))

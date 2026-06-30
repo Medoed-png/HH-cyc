@@ -435,6 +435,9 @@ def run_applications(page: Page, vacancies: list[Vacancy], crit: Criteria,
                      should_stop=lambda: False, on_update=lambda v: None) -> int:
     """Цикл откликов с дневным лимитом и паузами. Возвращает число откликов."""
     applied_count = 0
+    # Счётчики причин пропуска — для понятного итога в логе.
+    skip = {"already": 0, "test": 0, "no_button": 0, "other": 0}
+    errors = 0
     delay_min, delay_max = (list(crit.delay_seconds) + [20, 45])[:2]
 
     for vacancy in vacancies:
@@ -460,9 +463,21 @@ def run_applications(page: Page, vacancies: list[Vacancy], crit: Criteria,
         else:
             # Если на сайте уже есть отклик (в т.ч. сделанный вручную) —
             # запоминаем для дедупликации (source='sync', не считаем в лимит).
-            if "уже откликались" in vacancy.note:
+            note = (vacancy.note or "").lower()
+            if "уже откликал" in note:  # «уже откликались на сайте»
                 storage.mark_applied(vacancy.vacancy_id, vacancy.title, vacancy.company,
                                      source="sync")
+            # Учёт причины для итога.
+            if status == STATUS_ERROR:
+                errors += 1
+            elif "уже откликал" in note:
+                skip["already"] += 1
+            elif "тест" in note or "анкет" in note:
+                skip["test"] += 1
+            elif "кнопка отклик" in note:
+                skip["no_button"] += 1
+            else:
+                skip["other"] += 1
             log(f"  – {status}: {vacancy.note}")
         on_update(vacancy)
 
@@ -472,4 +487,9 @@ def run_applications(page: Page, vacancies: list[Vacancy], crit: Criteria,
             log(f"  Пауза {pause:.0f} c…")
             _interruptible_sleep(pause, should_stop)
 
+    # Понятный итог: сколько отправлено и куда делись остальные.
+    log(f"Итог: отправлено {applied_count} из {len(vacancies)} подходящих. "
+        f"Пропущено — уже откликались: {skip['already']}, тест/анкета: {skip['test']}, "
+        f"без кнопки отклика: {skip['no_button']}, прочее: {skip['other']}; "
+        f"ошибок: {errors}.")
     return applied_count
