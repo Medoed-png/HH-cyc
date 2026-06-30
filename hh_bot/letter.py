@@ -16,13 +16,34 @@ import re
 # для подстановки в письмо). Лёгкий, расширяемый. Латиница матчится по границам
 # слова, кириллица — как подстрока (ловит склонения).
 SKILLS = [
-    # IT / разработка
+    # IT / языки
     "Python", "Java", "JavaScript", "TypeScript", "C++", "C#", "Go", "Kotlin",
-    "Swift", "PHP", "Ruby", "Rust", "SQL", "PostgreSQL", "MySQL", "MongoDB",
-    "Redis", "Docker", "Kubernetes", "Linux", "Git", "REST", "API", "Django",
-    "Flask", "FastAPI", "React", "Vue", "Angular", "Node.js", "Spring",
-    "машинное обучение", "аналитика данных", "тестирование", "DevOps", "CI/CD",
-    "1С", "битрикс",
+    "Swift", "PHP", "Ruby", "Rust", "Scala", "Elixir", "Dart", "Bash",
+    "PowerShell", "Objective-C", "Solidity",
+    # IT / базы и хранилища
+    "SQL", "PostgreSQL", "MySQL", "MongoDB", "Redis", "ClickHouse",
+    "Elasticsearch", "SQLite", "Oracle", "ORM",
+    # IT / бэкенд и фреймворки
+    "Django", "Flask", "FastAPI", "Spring", "Node.js", "Express", "NestJS",
+    "Laravel", "Symfony", ".NET", "ASP.NET", "GraphQL", "gRPC", "WebSocket",
+    "RabbitMQ", "Kafka", "Celery", "микросервисы", "многопоточность", "ООП",
+    # IT / фронтенд
+    "React", "Vue", "Angular", "Svelte", "Next.js", "Redux", "HTML", "CSS",
+    "Sass", "Webpack", "Tailwind",
+    # IT / DevOps и облака
+    "Docker", "Kubernetes", "Linux", "Git", "CI/CD", "AWS", "Azure", "GCP",
+    "Terraform", "Ansible", "Jenkins", "GitLab", "Nginx", "Prometheus",
+    "Grafana", "Yandex Cloud", "DevOps",
+    # IT / данные и ML
+    "Pandas", "NumPy", "TensorFlow", "PyTorch", "scikit-learn", "Spark",
+    "Airflow", "ETL", "Tableau", "Power BI", "машинное обучение",
+    "аналитика данных", "Data Science", "NLP", "computer vision",
+    # IT / мобайл и QA
+    "Android", "iOS", "Flutter", "React Native", "Selenium", "Pytest",
+    "Playwright", "Postman", "автотесты", "тестирование", "unit-тесты",
+    # IT / процессы и интеграции
+    "REST", "API", "SOAP", "OAuth", "JWT", "Agile", "Scrum", "Kanban", "Jira",
+    "Confluence", "code review", "1С", "битрикс",
     # Офис / общие
     "Excel", "Word", "PowerPoint", "договор", "переговоры", "отчётность",
     "английский язык", "документооборот", "планирование", "бюджет",
@@ -39,12 +60,6 @@ SKILLS = [
     "обслуживание клиентов", "работа в команде",
 ]
 
-# Несколько вариантов вступления — лёгкая вариативность, выбирается детерминированно.
-_INTROS = [
-    "Меня заинтересовала ваша вакансия",
-    "С интересом откликаюсь на вакансию",
-    "Хочу предложить свою кандидатуру на позицию",
-]
 
 
 def _present(skill: str, text_low: str) -> bool:
@@ -91,28 +106,66 @@ def _join(items: list[str]) -> str:
     return ", ".join(items[:-1]) + " и " + items[-1]
 
 
-def build_letter(vacancy, description: str = "", crit=None) -> str:
-    """Собрать письмо под вакансию из её названия/компании и навыков из описания."""
-    title = (getattr(vacancy, "title", "") or "").strip()
-    company = (getattr(vacancy, "company", "") or "").strip()
-    skills = extract_skills(description, crit)
-
-    intro = _INTROS[len(title) % len(_INTROS)]
-    first = f"{intro} «{title}»" if title else intro
+def _pos(title: str, company: str) -> str:
+    """«вакансию «title» в компании company» (части опускаются, если пусты)."""
+    s = f"«{title}»" if title else "вакансию"
     if company:
-        first += f" в компании {company}"
-    first += "."
+        s += f" в компании {company}"
+    return s
 
-    if skills:
-        body = (f"Мой опыт включает {_join(skills)} — это соответствует требованиям, "
-                f"указанным в описании вакансии.")
-    else:
-        body = ("Мой опыт и навыки релевантны требованиям вакансии — готов подробно "
-                "рассказать о подходящих проектах и задачах.")
 
+def _tpl_classic(title, company, skills, extra):
+    first = f"Меня заинтересовала ваша вакансия {_pos(title, company)}."
+    body = (f"Мой опыт включает {_join(skills)} — это соответствует требованиям, "
+            f"указанным в описании вакансии." if skills else
+            "Мой опыт и навыки релевантны требованиям вакансии — готов подробно "
+            "рассказать о подходящих проектах и задачах.")
     parts = ["Здравствуйте!", first, body]
-    extra = (getattr(crit, "cover_letter", "") or "").strip() if crit else ""
     if extra:
         parts.append(extra)
     parts.append("Буду рад обсудить детали на собеседовании. Спасибо за внимание!")
+    return parts
+
+
+def _tpl_short(title, company, skills, extra):
+    first = f"Добрый день! Откликаюсь на {_pos(title, company)}."
+    body = (f"В работе использую {_join(skills)} — это закрывает ключевые требования "
+            f"вакансии." if skills else
+            "Мои навыки соответствуют требованиям — готов погрузиться в задачи быстро.")
+    parts = [first, body]
+    if extra:
+        parts.append(extra)
+    parts.append("Готов обсудить задачи и сроки. Спасибо, что рассмотрели мою кандидатуру!")
+    return parts
+
+
+def _tpl_skills_first(title, company, skills, extra):
+    lead = (f"Среди моих навыков — {_join(skills)}, и они хорошо ложатся на вашу "
+            f"вакансию." if skills else
+            "Мой профиль хорошо подходит под описание вашей вакансии.")
+    second = f"Поэтому с интересом откликаюсь на {_pos(title, company)}."
+    parts = ["Здравствуйте!", lead, second]
+    if extra:
+        parts.append(extra)
+    parts.append("Буду рад пообщаться на собеседовании. Спасибо за внимание!")
+    return parts
+
+
+_TEMPLATES = [_tpl_classic, _tpl_short, _tpl_skills_first]
+
+
+def _variant_index(vacancy) -> int:
+    """Стабильный выбор шаблона по вакансии (одна вакансия -> один шаблон,
+    разные вакансии -> разные шаблоны)."""
+    key = str(getattr(vacancy, "vacancy_id", "") or getattr(vacancy, "title", "") or "")
+    return sum(ord(c) for c in key) % len(_TEMPLATES)
+
+
+def build_letter(vacancy, description: str = "", crit=None) -> str:
+    """Собрать письмо под вакансию: навыки из описания + один из вариантов шаблона."""
+    title = (getattr(vacancy, "title", "") or "").strip()
+    company = (getattr(vacancy, "company", "") or "").strip()
+    skills = extract_skills(description, crit)
+    extra = (getattr(crit, "cover_letter", "") or "").strip() if crit else ""
+    parts = _TEMPLATES[_variant_index(vacancy)](title, company, skills, extra)
     return "\n\n".join(parts)
