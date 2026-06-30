@@ -133,7 +133,7 @@ def _send_cover_letter(page: Page, text: str, log) -> bool:
         page.wait_for_timeout(500)
 
     if letter is None:
-        return False  # фолбэк-сообщение пишет вызывающий _deliver_cover_letter
+        return False  # поля нет — вызывающий уйдёт в фолбэк (чат)
 
     try:
         letter.scroll_into_view_if_needed()
@@ -293,24 +293,6 @@ def _send_letter_via_chat(page: Page, vacancy_id: str, text: str, log) -> bool:
     return True
 
 
-def _deliver_cover_letter(page: Page, vacancy_id: str, text: str, log) -> str:
-    """Гибрид доставки письма. Возвращает способ: "inline" | "chat" | "".
-
-    Сначала быстрый inline-путь (поле письма на странице вакансии). Если поля
-    нет (кладовщик/грузчик) — фолбэк: открыть чат вакансии через страницу
-    «Отклики» и отправить письмо сообщением. Inline-путь при неудаче письмо НЕ
-    отправляет, поэтому двойной отправки нет.
-    """
-    if not (text or "").strip():
-        return ""
-    # Доставка письма СООБЩЕНИЕМ В ЧАТ — единый надёжный путь для всех типов
-    # вакансий (inline-поле на части вакансий отсутствует или подменяется чужим
-    # textarea). Чат существует после любого созданного отклика.
-    if _send_letter_via_chat(page, vacancy_id, text, log):
-        return "chat"
-    return ""
-
-
 def _select_resume(page: Page, resume_name: str, log) -> None:
     """Выбрать резюме по имени, если на странице есть селектор резюме.
 
@@ -387,9 +369,21 @@ def apply_to(page: Page, vacancy: Vacancy, crit: Criteria, log=lambda m: None) -
     _dismiss_popup(page)
     _select_resume(page, crit.resume_name, log)  # выбрать нужное резюме, если их несколько
 
-    # Подтверждение отклика (создаётся самим кликом «Откликнуться») ДО доставки
-    # письма: фолбэк-чат уводит на страницу «Отклики», поэтому сперва убеждаемся,
-    # что отклик принят, читая основной DOM вакансии.
+    # Письмо: авто-генерация под вакансию из её описания (без API) либо статичный текст.
+    if getattr(crit, "auto_letter", False):
+        letter = letter_mod.build_letter(vacancy, description, crit)
+        log("  Сгенерировал письмо под эту вакансию.")
+    else:
+        letter = (crit.cover_letter or "").strip()
+
+    # 1) ОСНОВНОЙ ПУТЬ: вписать письмо прямо в поле отклика на странице и отправить
+    #    его кнопкой — это и доставляет письмо, и финализирует отклик.
+    letter_method = ""
+    if letter and _send_cover_letter(page, letter, log):
+        letter_method = "inline"
+
+    # Подтверждение отклика: его создал либо inline-submit выше, либо сам клик
+    # «Откликнуться» (одно-кликовые вакансии без поля письма).
     responded = False
     for _ in range(8):  # до ~4 c
         if page.query_selector(selectors.ALREADY_RESPONDED) is not None:
@@ -403,20 +397,17 @@ def apply_to(page: Page, vacancy: Vacancy, crit: Criteria, log=lambda m: None) -
         vacancy.note = "отклик не подтвердился"
         return STATUS_ERROR
 
-    # Письмо: авто-генерация под вакансию из её описания (без API) либо статичный текст.
-    if getattr(crit, "auto_letter", False):
-        letter = letter_mod.build_letter(vacancy, description, crit)
-        log("  Сгенерировал письмо под эту вакансию.")
-    else:
-        letter = (crit.cover_letter or "").strip()
-    # Гибрид доставки письма: inline-поле на странице, иначе — сообщением в чат.
-    letter_method = _deliver_cover_letter(page, vacancy.vacancy_id, letter, log)
+    # 2) ФОЛБЭК: если поля письма на странице не было — отправляем письмо
+    #    отдельным сообщением в чат работодателя.
+    if letter and letter_method != "inline":
+        if _send_letter_via_chat(page, vacancy.vacancy_id, letter, log):
+            letter_method = "chat"
 
     # Статус не зависит от судьбы письма — отклик уже создан, письмо вторично.
     if not letter:
         vacancy.note = "отклик без письма (шаблон пуст)"
     elif letter_method == "inline":
-        vacancy.note = "с сопроводительным письмом"
+        vacancy.note = "письмо вписано в отклик"
     elif letter_method == "chat":
         vacancy.note = "письмо отправлено в чат"
     else:
