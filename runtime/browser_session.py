@@ -155,35 +155,30 @@ class BrowserSession(threading.Thread):
     def _cmd_quit(self) -> None:
         self._running = False
 
-    def _cmd_login(self) -> None:
-        # Сначала проверяем вход в фоне (без окна). Окно показываем ТОЛЬКО если
-        # действительно нужен ручной ввод логина/пароля/SMS.
-        br = self._ensure_browser()
-        if self.adapter.is_logged_in(br.page):
-            self._persist_cookies()
-            self._go_background()  # на случай, если окно было видимым
-            self._log(f"Вы уже авторизованы на {self.adapter.display_name}.")
-            self.events.put((EV_LOGIN, True))
-        else:
-            br = self._ensure_browser(visible=True)  # теперь покажем окно входа
-            self._log("Открываю страницу входа. Войдите вручную в окне браузера.")
-            self.adapter.open_manual_login(br.page)
-            self.events.put((EV_LOGIN, False))
-        self.events.put((EV_DONE, "login"))
-
     def _cmd_show_browser(self) -> None:
-        """Показать видимое окно браузера — для капчи/проверки/ручных действий.
+        """Показать видимое окно браузера (универсально: ручной вход + капча).
 
-        Если сейчас браузер невидимый (фон), пересоздаём его с окном и открываем
-        главную страницу сайта, чтобы окно было осмысленным.
+        Если пользователь НЕ авторизован — открываем страницу входа сайта (ручной
+        логин, вход сохранится в cookies). Если уже авторизован — открываем главную
+        для ручных действий/капчи. Заменяет прежнюю отдельную кнопку «Войти».
         """
         br = self._ensure_browser(visible=True)
         try:
             br.page.bring_to_front()
-            br.page.goto(self.adapter.base_url, wait_until="domcontentloaded")
-        except Exception:  # noqa: BLE001 — навигация не критична для показа окна
+        except Exception:  # noqa: BLE001
             pass
-        self._log("Окно браузера открыто. Можно пройти капчу или действия вручную.")
+        if self.adapter.is_logged_in(br.page):
+            self._persist_cookies()
+            try:
+                br.page.goto(self.adapter.base_url, wait_until="domcontentloaded")
+            except Exception:  # noqa: BLE001
+                pass
+            self._log("Окно браузера открыто. Можно пройти капчу или действия вручную.")
+            self.events.put((EV_LOGIN, True))
+        else:
+            self.adapter.open_manual_login(br.page)
+            self._log("Открыл окно на странице входа — войдите вручную, вход сохранится.")
+            self.events.put((EV_LOGIN, False))
         self.events.put((EV_DONE, "show_browser"))
 
     # --- серверный логин по логину/паролю + код (M5b) ---

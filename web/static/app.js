@@ -580,7 +580,6 @@ function bindButtons() {
     showModal(() => api("/api/apply", d));
   };
   $("btn-stop").onclick = () => api("/api/stop");
-  $("btn-login").onclick = () => api("/api/login");
   $("btn-responses").onclick = () => {
     $("resp-body").innerHTML = '<tr><td colspan="5" class="muted-cell">Загружаю…</td></tr>';
     api("/api/responses");

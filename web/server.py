@@ -210,15 +210,6 @@ def _require_site(site: str):
     return None
 
 
-@app.post("/api/login")
-async def api_login(request: Request, user: User = Depends(current_user)):
-    site = _site(await _body(request))
-    if (err := _require_site(site)):
-        return err
-    manager.submit(user.id, site, "login")
-    return {"ok": True}
-
-
 @app.post("/api/check_login")
 async def api_check_login(request: Request, user: User = Depends(current_user)):
     site = _site(await _body(request))
