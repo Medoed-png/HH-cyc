@@ -73,7 +73,15 @@ class BrowserSession(threading.Thread):
 
     # --- внутреннее ---
     def _log(self, msg: str) -> None:
-        print(f"[bot u{self.user_id}/{self.site_id}]", msg, flush=True)
+        prefix = f"[bot u{self.user_id}/{self.site_id}]"
+        try:
+            print(prefix, msg, flush=True)
+        except Exception:  # noqa: BLE001 — консоль cp1251 не кодирует юникод (✓, эмодзи)
+            try:
+                print(prefix, msg.encode("ascii", "replace").decode("ascii"), flush=True)
+            except Exception:  # noqa: BLE001
+                pass
+        # В UI (через SSE) уходит исходный текст с юникодом — там кодировка UTF-8.
         self.events.put((EV_LOG, msg))
 
     def _proxy_url(self) -> str | None:
