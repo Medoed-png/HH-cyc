@@ -96,7 +96,17 @@ async function loadConfig() {
   $("auto_letter").checked = !!cfg.auto_letter;
   $("autopilot_enabled").checked = !!cfg.autopilot_enabled;
   $("autopilot-badge").style.display = cfg.autopilot_enabled ? "" : "none";
+  updateAutomationBadge();
   $("salary_min").value = groupDigits($("salary_min").value);
+}
+
+// Бейдж карточки «Автоматизация и письмо»: включён ли автопилот.
+function updateAutomationBadge() {
+  const b = $("automation-badge");
+  if (!b) return;
+  const on = $("autopilot_enabled").checked;
+  b.className = "badge " + (on ? "b-green" : "b-gray");
+  b.textContent = on ? "автопилот вкл" : "выключено";
 }
 
 // ---------- автоподсказки ----------
@@ -933,13 +943,18 @@ function bindButtons() {
     logLine("Telegram-уведомления отключены.");
     loadTelegram();
   };
-  $("btn-save").onclick = async () => {
+  async function saveConfig() {
     await api("/api/save", collectForm());
     $("autopilot-badge").style.display = $("autopilot_enabled").checked ? "" : "none";
+    updateAutomationBadge();
     logLine($("autopilot_enabled").checked
-      ? "Критерии сохранены. Автопилот включён."
-      : "Критерии сохранены.");
-  };
+      ? "Настройки сохранены. Автопилот включён."
+      : "Настройки сохранены.");
+  }
+  $("btn-save").onclick = saveConfig;              // кнопка в «Критериях»
+  $("btn-save-auto").onclick = saveConfig;         // кнопка в «Автоматизации и письме»
+  // Живое обновление бейджа карточки при переключении автопилота.
+  $("autopilot_enabled").addEventListener("change", updateAutomationBadge);
 
   $("salary_min").addEventListener("input", (e) => {
     const pos = e.target.value.length;

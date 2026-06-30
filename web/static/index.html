@@ -197,7 +197,28 @@
             (больше откликов, но возможны нерелевантные).
           </div>
         </div>
+      </div>
 
+      <div class="toolbar">
+        <button id="btn-search" class="btn btn-primary"><i class="bi bi-search"></i> Найти</button>
+        <button id="btn-apply" class="btn btn-primary"><i class="bi bi-send"></i> Запустить отклики</button>
+        <button id="btn-stop" class="btn btn-danger"><i class="bi bi-stop-circle"></i> Стоп</button>
+        <span class="spacer"></span>
+        <button id="btn-open" class="btn btn-outline-secondary"><i class="bi bi-box-arrow-up-right"></i> Открыть вакансию</button>
+        <button id="btn-show-browser" class="btn btn-outline-secondary"><i class="bi bi-window"></i> Показать окно браузера</button>
+        <button id="btn-save" class="btn btn-success"><i class="bi bi-check2"></i> Сохранить</button>
+      </div>
+      </div>
+    </section>
+
+    <!-- Автоматизация и сопроводительное письмо -->
+    <section class="card mb-3" id="automation-card">
+      <div class="card-head">
+        <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Автоматизация и сопроводительное письмо</h2></div>
+        <span id="automation-badge" class="badge b-gray">выключено</span>
+      </div>
+      <div class="card-body">
+      <div class="form-grid">
         <label>Автопилот</label>
         <div class="field checks">
           <label><input class="form-check-input" type="checkbox" id="autopilot_enabled"> Авто-запуск поиска и откликов</label>
@@ -214,18 +235,11 @@
         <label>Сопроводительное письмо</label>
         <div class="field">
           <textarea id="cover_letter" class="form-control" rows="4" placeholder="например: Здравствуйте! Меня заинтересовала ваша вакансия. Готов обсудить детали на собеседовании."></textarea>
-          <div class="text-secondary small mt-1">При включённом авто-письме этот текст добавляется в конец как личный абзац.</div>
+          <div class="text-secondary small mt-1">При включённом авто-письме этот текст добавляется в конец как личный абзац. Без авто-письма он отправляется как есть.</div>
         </div>
       </div>
-
       <div class="toolbar">
-        <button id="btn-search" class="btn btn-primary"><i class="bi bi-search"></i> Найти</button>
-        <button id="btn-apply" class="btn btn-primary"><i class="bi bi-send"></i> Запустить отклики</button>
-        <button id="btn-stop" class="btn btn-danger"><i class="bi bi-stop-circle"></i> Стоп</button>
-        <span class="spacer"></span>
-        <button id="btn-open" class="btn btn-outline-secondary"><i class="bi bi-box-arrow-up-right"></i> Открыть вакансию</button>
-        <button id="btn-show-browser" class="btn btn-outline-secondary"><i class="bi bi-window"></i> Показать окно браузера</button>
-        <button id="btn-save" class="btn btn-success"><i class="bi bi-check2"></i> Сохранить</button>
+        <button id="btn-save-auto" class="btn btn-success"><i class="bi bi-check2"></i> Сохранить</button>
       </div>
       </div>
     </section>
