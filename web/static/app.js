@@ -689,8 +689,9 @@ function renderStatsChart(s) {
     labels: ["Приглашения", "Отказы", "Просмотрено", "Без ответа"],
     datasets: [{
       data: [invites, reject, viewed, other],
-      backgroundColor: ["#198754", "#dc3545", "#0dcaf0", "#6c757d"],
-      borderWidth: 0,
+      backgroundColor: ["#37d39b", "#f26a7e", "#5fb0ff", "#3a4456"],
+      borderColor: "#161b25",
+      borderWidth: 2,
     }],
   };
   if (_statsChart) {
@@ -701,7 +702,7 @@ function renderStatsChart(s) {
       type: "doughnut",
       data,
       options: {
-        plugins: { legend: { position: "right", labels: { color: "#adb5bd", boxWidth: 12 } } },
+        plugins: { legend: { position: "right", labels: { color: "#8a94a8", boxWidth: 12, font: { family: "JetBrains Mono", size: 11 } } } },
         cutout: "62%",
       },
     });
