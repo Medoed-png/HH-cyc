@@ -184,7 +184,8 @@ def api_config(request: Request, user: User = Depends(current_user)):
     return {
         "professions": ", ".join(crit.profession_texts),
         "region": region_name,
-        "salary_min": crit.salary_min,
+        # 0 = без фильтра — отдаём пустым, чтобы поле показывало пример, а не «0».
+        "salary_min": crit.salary_min or "",
         "exclude_words": ", ".join(crit.exclude_words),
         "include_words": ", ".join(crit.include_words),
         "resume_name": crit.resume_name,

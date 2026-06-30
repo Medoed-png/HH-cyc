@@ -19,7 +19,7 @@ CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.y
 class Criteria:
     """Критерии поиска и поведения бота (зеркало config.yaml)."""
 
-    professions: list = field(default_factory=lambda: [{"text": "python разработчик"}])
+    professions: list = field(default_factory=list)
     # Регион — непрозрачная строка, которую интерпретирует адаптер сайта
     # (для hh.ru это id области, напр. "1" = Москва, "113" = вся Россия).
     region: str = "1"
