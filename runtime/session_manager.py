@@ -33,7 +33,8 @@ def event_to_msg(kind: str, payload) -> dict | None:
     if kind == EV_VACANCY:
         return {"type": "vacancy", "vacancy": payload.to_dict()}
     if kind == EV_RESPONSES:
-        return {"type": "responses", "items": payload["items"], "unread": payload["unread"]}
+        return {"type": "responses", "items": payload["items"], "unread": payload["unread"],
+                "logged_out": bool(payload.get("logged_out"))}
     if kind == EV_CHAT:
         return {"type": "chat",
                 "vacancy_id": payload["vacancy_id"], "messages": payload["messages"]}

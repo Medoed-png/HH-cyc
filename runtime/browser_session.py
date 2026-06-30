@@ -46,6 +46,9 @@ class BrowserSession(threading.Thread):
         self.commands: queue.Queue = queue.Queue()
         self.events: queue.Queue = queue.Queue()
         self._stop_apply = threading.Event()
+        # Идёт интерактивный вход (ждём код из SMS/капчу): пока взведён — не
+        # навигируем страницу авто-проверкой входа, иначе страница кода теряется.
+        self._interactive_login = False
         self._browser: Browser | None = None
         self._running = True
         self._last_suitable: list | None = None  # найденные вакансии для откликов
@@ -198,6 +201,7 @@ class BrowserSession(threading.Thread):
         """Обработать LoginResult: обновить статус кред, события, скрыть окно при успехе."""
         st = result.status
         if st == LoginStatus.OK:
+            self._interactive_login = False
             credentials.set_status(self.user_id, self.site_id,
                                    credentials.STATUS_CONNECTED, logged_in=True)
             self._persist_cookies()
@@ -205,8 +209,11 @@ class BrowserSession(threading.Thread):
             self.events.put((EV_LOGIN, True))
         elif st == LoginStatus.SMS_REQUIRED:
             # Страница оставлена на шаге кода; ждём команду submit_sms (не блокируем поток).
+            # Взводим флаг: авто-check_login не должен навигировать со страницы кода.
+            self._interactive_login = True
             credentials.set_status(self.user_id, self.site_id, credentials.STATUS_NEEDS_SMS)
         elif st == LoginStatus.CAPTCHA_REQUIRED:
+            self._interactive_login = True
             credentials.set_status(self.user_id, self.site_id, credentials.STATUS_NEEDS_CAPTCHA)
             # Капчу-картинку нельзя пройти автоматически. НЕ открываем окно сразу —
             # шлём статус needs_captcha: дашборд покажет заметное окно с кнопкой
@@ -214,6 +221,7 @@ class BrowserSession(threading.Thread):
             self._log("Сайт показал капчу — нажмите «Пройти капчу» во всплывающем окне, "
                       "чтобы открыть браузер и завершить вход.")
         else:  # BAD_CREDENTIALS | FAILED
+            self._interactive_login = False
             credentials.set_status(self.user_id, self.site_id, credentials.STATUS_INVALID)
             self.events.put((EV_LOGIN, False))
         self._emit_conn()
@@ -246,8 +254,13 @@ class BrowserSession(threading.Thread):
         except Exception:  # noqa: BLE001
             pass
         shutil.rmtree(self._profile_dir, ignore_errors=True)
+        # Синхронизируем статус: сессия больше не авторизована. Без этого в БД
+        # оставался бы status='connected', и UI устойчиво показывал бы «подключён».
+        self._interactive_login = False
+        credentials.set_status(self.user_id, self.site_id, credentials.STATUS_INVALID)
         self._log(f"Вышли из аккаунта {self.adapter.display_name} — можно подключить другой.")
         self.events.put((EV_LOGIN, False))
+        self._emit_conn()  # conn_status='invalid' -> панель вернётся к форме входа
         self.events.put((EV_DONE, "logout_site"))
 
     def _cmd_connect(self) -> None:
@@ -290,6 +303,11 @@ class BrowserSession(threading.Thread):
         self.events.put((EV_DONE, "submit_sms"))
 
     def _cmd_check_login(self) -> None:
+        # Во время интерактивного входа (ждём код/капчу) НЕ навигируем страницу:
+        # is_logged_in ушёл бы со страницы кода и сломал бы последующий submit_sms.
+        if self._interactive_login:
+            self.events.put((EV_DONE, "check_login"))
+            return
         br = self._ensure_browser()
         logged = self.adapter.is_logged_in(br.page)
         if logged:
@@ -318,12 +336,15 @@ class BrowserSession(threading.Thread):
         # по остальным фильтрам (регион, опыт, занятость, график/удалёнка).
         queries = crit.profession_texts or [""]
         for text in queries:
+            if self._stop_apply.is_set():  # «Стоп» прерывает между профессиями
+                self._log("Поиск остановлен.")
+                break
             antiban.rate_limit(self.user_id)  # разнести запросы во времени
             self._log(f"Поиск: {text or 'все вакансии (без профессии)'}")
             found = self.adapter.search(
                 br.page, text, crit.region, pages, log=self._log,
                 experience=crit.experience, employment=crit.employment,
-                schedule=crit.schedule,
+                schedule=crit.schedule, should_stop=self._stop_apply.is_set,
             )
             all_found.extend(found)
         self._log(f"Всего найдено: {len(all_found)}")
@@ -335,6 +356,7 @@ class BrowserSession(threading.Thread):
         return suitable
 
     def _cmd_search(self, crit: Criteria) -> None:
+        self._stop_apply.clear()  # сброс возможного стопа от прошлой операции
         self._do_search(crit)
         self.events.put((EV_DONE, "search"))
 
@@ -342,7 +364,9 @@ class BrowserSession(threading.Thread):
         """Собрать ответы работодателей и отправить их в интерфейс."""
         br = self._ensure_browser()
         if not self.adapter.is_logged_in(br.page):
-            self._log(f"Сначала войдите на {self.adapter.display_name} (кнопка «Войти»).")
+            self._log(f"Сессия {self.adapter.display_name} не активна — войдите заново.")
+            # Доносим до UI, что не вошли: иначе «Загружаю…» висел бы вечно.
+            self.events.put((EV_RESPONSES, {"items": [], "unread": 0, "logged_out": True}))
             self.events.put((EV_DONE, "responses"))
             return
         antiban.rate_limit(self.user_id)  # не частить с запросами к hh.ru
@@ -402,8 +426,12 @@ class BrowserSession(threading.Thread):
     def _cmd_apply(self, crit: Criteria) -> None:
         self._stop_apply.clear()
         if self._last_suitable:
-            suitable = self._last_suitable
-            self._log(f"Откликаюсь на найденные вакансии: {len(suitable)} шт.")
+            # Перефильтровываем кеш под ТЕКУЩИЕ критерии: иначе изменённые после
+            # «Найти» фильтры (исключения/зарплата/чёрный список/строгий отбор)
+            # игнорировались бы, и бот делал необратимые отклики на лишние вакансии.
+            suitable = filters.filter_all(self._last_suitable, crit, self._storage)
+            self._log(f"Откликаюсь на найденные вакансии: {len(suitable)} шт. "
+                      f"(после фильтра по текущим критериям).")
         else:
             self._log("Сначала ищу вакансии…")
             suitable = self._do_search(crit)

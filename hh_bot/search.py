@@ -115,11 +115,14 @@ def parse_cards(page: Page, profession: str) -> list[Vacancy]:
 
 def search(page: Page, text: str, region: int, max_pages: int = 5,
            log=lambda m: None, experience: str = "", employment=None,
-           schedule=None) -> list[Vacancy]:
+           schedule=None, should_stop=lambda: False) -> list[Vacancy]:
     """Обойти страницы выдачи по одному запросу и вернуть все вакансии."""
     found: list[Vacancy] = []
     seen: set[str] = set()  # дедуп по url — и защита при сканировании всех страниц
     for page_num in range(max_pages):
+        if should_stop():  # «Стоп» прерывает длинное сканирование (особ. «все страницы»)
+            log("  Поиск остановлен.")
+            break
         url = build_search_url(text, region, page_num, experience=experience,
                                employment=employment, schedule=schedule)
         log(f"  Загружаю страницу {page_num + 1}: {text}")

@@ -285,10 +285,17 @@ function markRespSeen(r) {
   try { localStorage.setItem(RESP_SEEN_KEY, JSON.stringify([...respSeen])); } catch (e) {}
 }
 
-function renderResponses(items, unread) {
+function renderResponses(items, unread, loggedOut) {
   const body = $("resp-body");
   body.innerHTML = "";
   chatCache.clear(); openPanels.clear(); respById.clear();
+  if (loggedOut) {
+    $("resp-unread").style.display = "none";
+    body.innerHTML = '<tr><td colspan="5" class="muted-cell">' +
+      'Сессия сайта истекла — ответы не загрузить. Войдите заново в карточке ' +
+      '«Подключение аккаунтов».</td></tr>';
+    return;
+  }
   if (!items.length) {
     $("resp-unread").style.display = "none";
     body.innerHTML = '<tr><td colspan="5" class="muted-cell">Ответов пока нет.</td></tr>';
@@ -418,6 +425,7 @@ let connectSite = currentSite;
 let connectMethods = [];      // способы входа выбранной площадки (из /api/login_methods)
 let connectMode = null;       // id выбранного способа входа
 let _lastConn = { status: "invalid" };  // последний статус подключения connectSite
+let _awaitingCode = false;    // ждём ввод кода/капчи — не дёргать авто-check_login
 
 function currentMethod() {
   return connectMethods.find(m => m.id === connectMode) || connectMethods[0]
@@ -551,6 +559,9 @@ function renderConnStatus(st) {
   setSiteConn(connectSite, _lastConn.status);
   refreshConnectBadge();
   if (_lastConn.username && !$("hh-username").value) $("hh-username").value = _lastConn.username;
+  // Идёт интерактивный вход (ждём код/капчу) — авто-проверка входа не должна
+  // дёргать сервер (он бы навигировал со страницы кода и сломал ввод кода).
+  _awaitingCode = (_lastConn.status === "needs_sms" || _lastConn.status === "needs_captcha");
   // Поле кода и кнопка «Отправить код» — только когда сайт запросил код.
   const needSms = _lastConn.status === "needs_sms";
   $("sms-label").style.display = needSms ? "" : "none";
@@ -781,9 +792,17 @@ function connectEvents() {
     // Вход выполнен/снят — красим точку любой площадки (зелёная = вход выполнен),
     // плюс обновляем шапку для текущего сайта поиска. Тоже до фильтра по currentSite.
     if (msg.type === "login") {
-      if (msg.site) setSiteLoggedIn(msg.site, msg.logged_in);
+      if (msg.site) {
+        setSiteLoggedIn(msg.site, msg.logged_in);
+        // Явный выход: сбрасываем статус кред в UI, иначе устаревший 'connected'
+        // продолжал бы держать точку зелёной и панель в состоянии «подключён».
+        if (!msg.logged_in) setSiteConn(msg.site, "invalid");
+      }
       if (!msg.site || msg.site === currentSite) setStatus(msg.logged_in);
-      if (msg.site === connectSite) { togglePanelConnected(effectiveConnected(_lastConn)); refreshConnectBadge(); }
+      if (msg.site === connectSite) {
+        if (!msg.logged_in) _lastConn = { status: "invalid" };
+        togglePanelConnected(effectiveConnected(_lastConn)); refreshConnectBadge();
+      }
       return;
     }
     // Прочие события приходят от всех сессий пользователя; в режиме «все сайты»
@@ -795,8 +814,15 @@ function connectEvents() {
       if (msg.vacancy && msg.vacancy.status === "откликнулись") scheduleStatsRefresh();
     }
     else if (msg.type === "responses") {
-      renderResponses(msg.items, msg.unread || 0); loadStats();
-      _lastRespAt = Date.now(); updateRespBadge();
+      if (msg.logged_out) {
+        // Сессия истекла — показываем призыв войти, не выдаём «обновлено в HH:MM».
+        renderResponses([], 0, true);
+        if (!msg.site || msg.site === currentSite) setStatus(false);
+      } else {
+        renderResponses(msg.items, msg.unread || 0);
+        _lastRespAt = Date.now(); updateRespBadge();
+      }
+      loadStats();
     }
     else if (msg.type === "chat") onChatLoaded(msg.vacancy_id, msg.messages);
   };
@@ -1035,6 +1061,7 @@ function bindAutoLogin() {
   const recheck = () => {
     if (document.visibilityState !== "visible") return;
     if (currentSite === ALL_SITES) return;  // в режиме «все» единый статус не нужен
+    if (_awaitingCode && connectSite === currentSite) return;  // идёт ввод кода — не мешать
     if (Date.now() - lastCheck < 5000) return;
     lastCheck = Date.now();
     api("/api/check_login").catch(() => {});

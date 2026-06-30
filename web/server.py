@@ -315,8 +315,15 @@ async def api_sms(request: Request, user: User = Depends(current_user)):
 
 @app.post("/api/disconnect")
 async def api_disconnect(request: Request, user: User = Depends(current_user)):
-    """Удалить сохранённые креды (отключить аккаунт)."""
-    creds_mod.delete(user.id, _site(await _body(request)))
+    """Отключить аккаунт: удалить креды И разлогинить браузерную сессию.
+
+    Раньше удалялись только логин/пароль, но cookies/профиль оставались — сессия
+    продолжала быть авторизованной (бот работал под «отключённым» аккаунтом).
+    """
+    site = _site(await _body(request))
+    creds_mod.delete(user.id, site)
+    if site != ALL_SITES:
+        manager.submit(user.id, site, "logout_site")  # стереть cookies/профиль и выйти
     return {"ok": True}
 
 
@@ -378,7 +385,10 @@ async def api_apply(request: Request, user: User = Depends(current_user)):
 
 @app.post("/api/stop")
 async def api_stop(request: Request, user: User = Depends(current_user)):
-    manager.request_stop_apply(user.id, _site(await _body(request)))
+    # Веер по всем сайтам в режиме «все» (как search/apply) — иначе сессии под
+    # ключом (user,'all') нет и стоп молча ничего не останавливает.
+    for sid in _targets(_site(await _body(request))):
+        manager.request_stop_apply(user.id, sid)
     return {"ok": True}
 
 

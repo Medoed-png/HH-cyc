@@ -120,7 +120,8 @@ class GenericSiteAdapter(SiteAdapter):
 
     def search(self, page: Page, query: str, region: str, max_pages: int,
                log: Log = lambda m: None, experience: str = "",
-               employment: list | None = None, schedule: list | None = None
+               employment: list | None = None, schedule: list | None = None,
+               should_stop: Callable[[], bool] = lambda: False
                ) -> list[Vacancy]:
         if not (self.CARD and self.TITLE_LINK and self.SEARCH_URL):
             log(f"[{self.display_name}] поиск ещё не настроен — нужна живая сверка "
@@ -129,6 +130,9 @@ class GenericSiteAdapter(SiteAdapter):
         found: list[Vacancy] = []
         seen: set[str] = set()  # дедуп по url — и защита от «пагинация не работает»
         for page_num in range(max_pages):
+            if should_stop():
+                log(f"  [{self.display_name}] поиск остановлен.")
+                break
             log(f"  [{self.display_name}] страница {page_num + 1}: {query}")
             page.goto(self._build_url(query, page_num), wait_until="domcontentloaded")
             page.wait_for_timeout(1500)

@@ -100,11 +100,15 @@ class SuperJobAdapter(SiteAdapter):
 
     def search(self, page: Page, query: str, region: str, max_pages: int,
                log: Log = lambda m: None, experience: str = "",
-               employment: list | None = None, schedule: list | None = None
+               employment: list | None = None, schedule: list | None = None,
+               should_stop: Callable[[], bool] = lambda: False
                ) -> list[Vacancy]:
         # Фильтры опыта/занятости/графика для SuperJob пока не поддержаны (best-effort).
         found: list[Vacancy] = []
         for page_num in range(max_pages):
+            if should_stop():
+                log("  [SuperJob] поиск остановлен.")
+                break
             url = self._build_search_url(query, page_num)
             log(f"  [SuperJob] страница {page_num + 1}: {query}")
             page.goto(url, wait_until="domcontentloaded")
