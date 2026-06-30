@@ -18,7 +18,7 @@ import time
 from typing import Callable
 
 from .browser_session import (
-    BrowserSession, EV_LOG, EV_LOGIN, EV_VACANCY, EV_RESPONSES, EV_CHAT, EV_CONN,
+    BrowserSession, EV_LOG, EV_LOGIN, EV_VACANCY, EV_RESPONSES, EV_CHAT, EV_CONN, EV_DONE,
 )
 
 Publish = Callable[[int, dict], None]
@@ -40,7 +40,10 @@ def event_to_msg(kind: str, payload) -> dict | None:
                 "vacancy_id": payload["vacancy_id"], "messages": payload["messages"]}
     if kind == EV_CONN:
         return {"type": "conn_status", **payload}
-    return None  # EV_DONE и прочее в UI не транслируем
+    if kind == EV_DONE:
+        # Сигнал завершения операции — нужен фронту, чтобы снять блокировку кнопки.
+        return {"type": "done", "op": payload}
+    return None
 
 
 class SessionManager:

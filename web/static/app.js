@@ -242,13 +242,20 @@ const chatCache = new Map();   // vacancy_id -> messages
 const openPanels = new Map();  // vacancy_id -> panel element (открыта)
 const respById = new Map();    // vacancy_id -> r
 
-function statusBadge(status) {
-  const s = status.toLowerCase();
-  let cls = "b-gray";
-  if (s.includes("собеседов") || s.includes("приглаш") || s.includes("оффер")) cls = "b-green";
-  else if (s.includes("отказ")) cls = "b-red";
-  else if (s === "просмотрен" || s.includes("сообщ")) cls = "b-blue";
-  return `<span class="badge ${cls}">${status}</span>`;
+function statusBadgeClass(status) {
+  const s = (status || "").toLowerCase();
+  if (s.includes("собеседов") || s.includes("приглаш") || s.includes("оффер")) return "b-green";
+  if (s.includes("отказ")) return "b-red";
+  if (s === "просмотрен" || s.includes("сообщ")) return "b-blue";
+  return "b-gray";
+}
+// Бейдж статуса как DOM-элемент (textContent, без innerHTML) — статус приходит
+// спарсенным со страниц сайтов, поэтому вставлять его как HTML небезопасно (XSS).
+function statusBadgeEl(status) {
+  const span = document.createElement("span");
+  span.className = "badge " + statusBadgeClass(status);
+  span.textContent = status || "";
+  return span;
 }
 
 // «Просмотренные» отклики (где вы уже открывали ответ) — чтобы подсветка «новый
@@ -309,16 +316,27 @@ function renderResponses(items, unread, loggedOut) {
     const tr = document.createElement("tr");
     const isNew = isNewResponse(r);
     if (isNew) tr.classList.add("resp-new");
-    const newBadge = isNew ? '<span class="resp-new-dot" title="Новый ответ"></span>' : "";
-    const btnCls = isNew ? "btn btn-sm btn-success"
+    // Безопасный рендер через textContent: title/company/status спарсены с сайтов
+    // (неподконтрольный текст) — вставлять их как HTML нельзя (XSS).
+    const tdTitle = document.createElement("td");
+    if (isNew) {
+      const dot = document.createElement("span");
+      dot.className = "resp-new-dot"; dot.title = "Новый ответ";
+      tdTitle.appendChild(dot);
+    }
+    tdTitle.appendChild(document.createTextNode(r.title || ""));
+    const tdCompany = document.createElement("td"); tdCompany.textContent = r.company || "";
+    const tdDate = document.createElement("td"); tdDate.textContent = r.date || "";
+    const tdStatus = document.createElement("td"); tdStatus.appendChild(statusBadgeEl(r.status));
+    const tdBtn = document.createElement("td");
+    const btn = document.createElement("button");
+    btn.className = isNew ? "btn btn-sm btn-success"
                          : (r.responded ? "btn btn-sm btn-primary" : "btn btn-sm btn-outline-secondary");
-    const btnText = isNew ? "Открыть новый ответ" : "Посмотреть ответ";
-    tr.innerHTML =
-      `<td>${newBadge}${r.title}</td><td>${r.company || ""}</td><td>${r.date || ""}</td>` +
-      `<td>${statusBadge(r.status)}</td>` +
-      `<td><button class="${btnCls}">${btnText}</button></td>`;
+    btn.textContent = isNew ? "Открыть новый ответ" : "Посмотреть ответ";
+    btn.addEventListener("click", () => toggleMessages(tr, r));
+    tdBtn.appendChild(btn);
+    tr.append(tdTitle, tdCompany, tdDate, tdStatus, tdBtn);
     tr.addEventListener("dblclick", () => window.open(r.url, "_blank"));
-    tr.querySelector("button").addEventListener("click", () => toggleMessages(tr, r));
     body.appendChild(tr);
   }
 }
@@ -805,6 +823,9 @@ function connectEvents() {
       }
       return;
     }
+    // Завершение операции — снять блокировку кнопки (до фильтра по сайту: connect
+    // мог идти на connectSite ≠ сайт поиска).
+    if (msg.type === "done") { clearBusy(msg.op); return; }
     // Прочие события приходят от всех сессий пользователя; в режиме «все сайты»
     // показываем все, иначе только выбранный сайт поиска.
     if (currentSite !== ALL_SITES && msg.site && msg.site !== currentSite) return;
@@ -863,6 +884,34 @@ function bindCollapsibles() {
   });
 }
 
+// ---------- блокировка кнопок на время операции (анти-двойной-клик) ----------
+// Двойной клик ставил в очередь несколько команд (повторные навигации формы,
+// лишние капчи, дубли запросов к сайту → риск анти-бана). Блокируем кнопку до
+// прихода события "done" по соответствующей операции (с фолбэком по таймауту).
+const OP_BUTTON = { connect: "btn-connect", submit_sms: "btn-send-sms",
+                    search: "btn-search", apply: "btn-apply", responses: "btn-responses" };
+const _busyOps = {};  // op -> { btn, html, timer }
+
+function setBusy(op) {
+  const btn = $(OP_BUTTON[op]);
+  if (!btn || _busyOps[op]) return;
+  _busyOps[op] = {
+    btn, html: btn.innerHTML,
+    timer: setTimeout(() => clearBusy(op), 120000),  // фолбэк, если "done" не придёт
+  };
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+}
+
+function clearBusy(op) {
+  const b = _busyOps[op];
+  if (!b) return;
+  clearTimeout(b.timer);
+  b.btn.disabled = false;
+  b.btn.innerHTML = b.html;
+  delete _busyOps[op];
+}
+
 // ---------- модальное окно подтверждения ----------
 let _modalOk = null;
 
@@ -897,19 +946,20 @@ function openSelected() {
 }
 
 function bindButtons() {
-  $("btn-search").onclick = () => { clearTable(); api("/api/search", collectForm()); };
+  $("btn-search").onclick = () => { clearTable(); api("/api/search", collectForm()); setBusy("search"); };
   $("btn-apply").onclick = () => {
     const d = collectForm();
     $("modal-text").textContent =
       `Дневной лимит: ${d.daily_limit} откликов. Бот откликнется на найденные вакансии с сопроводительным письмом (строки перекрасятся по статусу).`;
     // Таблицу НЕ очищаем — откликаемся на уже найденные, строки обновятся на месте.
-    showModal(() => api("/api/apply", d));
+    showModal(() => { api("/api/apply", d); setBusy("apply"); });
   };
   $("btn-stop").onclick = () => api("/api/stop");
   $("btn-responses").onclick = () => {
     $("resp-body").innerHTML = '<tr><td colspan="5" class="muted-cell">Загружаю…</td></tr>';
     _lastRespReq = Date.now();  // ручное обновление тоже считается за «обновили»
     api("/api/responses");
+    setBusy("responses");
   };
   $("btn-open").onclick = openSelected;
   $("btn-show-browser").onclick = () => {
@@ -947,6 +997,7 @@ function bindButtons() {
       logLine("Отправляю запрос на код для " + username + "…");
     }
     api("/api/connect", body);
+    setBusy("connect");
   };
   $("btn-manual-login").onclick = () => {
     logLine("Открываю окно браузера для входа на " + (SITE_NAMES[connectSite] || connectSite) + "…");
@@ -962,6 +1013,7 @@ function bindButtons() {
     if (!code) { logLine("Введите код из SMS/письма."); return; }
     logLine("Отправляю код подтверждения…");
     api("/api/sms", { site: connectSite, code });
+    setBusy("submit_sms");
   };
   // Капча: кнопка «Пройти капчу» открывает видимое окно браузера на форме входа.
   $("captcha-cancel").onclick = hideCaptchaModal;
