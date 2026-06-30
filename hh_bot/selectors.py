@@ -54,6 +54,8 @@ CARD_COMPANY = '[data-qa="vacancy-serp__vacancy-employer"]'
 CARD_SALARY = '[data-qa="vacancy-serp__vacancy-compensation"]'
 
 # --- Страница вакансии / отклик ---
+# Текст описания вакансии (для авто-генерации сопроводительного письма).
+VACANCY_DESCRIPTION = '[data-qa="vacancy-description"]'
 RESPOND_BUTTON = '[data-qa="vacancy-response-link-top"], [data-qa="vacancy-response-button"]'
 # Уже откликнулись — появляется ссылка «Перейти к отклику».
 ALREADY_RESPONDED = '[data-qa="vacancy-response-link-view-topic"]'

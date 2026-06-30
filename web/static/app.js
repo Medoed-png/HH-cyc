@@ -40,6 +40,7 @@ function collectForm() {
     include_words: $("include_words").value,
     resume_name: $("resume_name").value,
     cover_letter: $("cover_letter").value,
+    auto_letter: $("auto_letter").checked,
     daily_limit: $("daily_limit").value,
     max_pages: $("max_pages").value,
     experience: $("experience").value,
@@ -74,6 +75,7 @@ async function loadConfig() {
   }
   setChecks("employment", cfg.employment);
   setChecks("schedule", cfg.schedule);
+  $("auto_letter").checked = !!cfg.auto_letter;
   $("autopilot_enabled").checked = !!cfg.autopilot_enabled;
   $("autopilot-badge").style.display = cfg.autopilot_enabled ? "" : "none";
   $("salary_min").value = groupDigits($("salary_min").value);

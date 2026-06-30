@@ -189,6 +189,7 @@ def api_config(request: Request, user: User = Depends(current_user)):
         "include_words": ", ".join(crit.include_words),
         "resume_name": crit.resume_name,
         "cover_letter": crit.cover_letter,
+        "auto_letter": crit.auto_letter,
         "daily_limit": crit.daily_limit,
         "max_pages": crit.max_pages,
         # Фильтры поиска: experience — строка, employment/schedule — списки кодов,

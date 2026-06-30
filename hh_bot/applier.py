@@ -8,6 +8,7 @@ import time
 from playwright.sync_api import Frame, Page
 
 from . import antiban
+from . import letter as letter_mod
 from . import selectors
 from .config import Criteria
 from .models import Vacancy, STATUS_APPLIED, STATUS_SKIPPED, STATUS_ERROR
@@ -348,6 +349,15 @@ def apply_to(page: Page, vacancy: Vacancy, crit: Criteria, log=lambda m: None) -
     page.goto(vacancy.url, wait_until="domcontentloaded")
     page.wait_for_timeout(_WAIT_PAGE)
 
+    # Текст описания вакансии — для авто-генерации письма (читаем до клика отклика).
+    description = ""
+    try:
+        desc_el = page.query_selector(selectors.VACANCY_DESCRIPTION)
+        if desc_el:
+            description = desc_el.inner_text() or ""
+    except Exception:  # noqa: BLE001
+        pass
+
     if _has_captcha(page):
         vacancy.note = "капча — пройдите вручную и продолжите"
         return STATUS_ERROR
@@ -391,8 +401,13 @@ def apply_to(page: Page, vacancy: Vacancy, crit: Criteria, log=lambda m: None) -
         vacancy.note = "отклик не подтвердился"
         return STATUS_ERROR
 
+    # Письмо: авто-генерация под вакансию из её описания (без API) либо статичный текст.
+    if getattr(crit, "auto_letter", False):
+        letter = letter_mod.build_letter(vacancy, description, crit)
+        log("  Сгенерировал письмо под эту вакансию.")
+    else:
+        letter = (crit.cover_letter or "").strip()
     # Гибрид доставки письма: inline-поле на странице, иначе — сообщением в чат.
-    letter = (crit.cover_letter or "").strip()
     letter_method = _deliver_cover_letter(page, vacancy.vacancy_id, letter, log)
 
     # Статус не зависит от судьбы письма — отклик уже создан, письмо вторично.

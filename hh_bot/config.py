@@ -28,6 +28,9 @@ class Criteria:
     include_words: list = field(default_factory=list)
     resume_name: str = ""
     cover_letter: str = ""
+    # Авто-письмо: генерировать сопроводительное под каждую вакансию из её описания
+    # (без API). cover_letter при этом добавляется отдельным абзацем как личный текст.
+    auto_letter: bool = False
     daily_limit: int = 150
     delay_seconds: list = field(default_factory=lambda: [20, 45])
     max_pages: int = 5
@@ -164,6 +167,7 @@ def from_form(data: dict, base: Criteria | None = None) -> Criteria:
     crit.include_words = _split(data.get("include_words", ""))
     crit.resume_name = (data.get("resume_name") or "").strip()
     crit.cover_letter = (data.get("cover_letter") or "").strip()
+    crit.auto_letter = bool(data.get("auto_letter"))
     crit.daily_limit = _to_int(data.get("daily_limit", 150), 150)
     crit.max_pages = _to_int(data.get("max_pages", 5), 5)
 
