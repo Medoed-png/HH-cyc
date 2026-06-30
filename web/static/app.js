@@ -521,13 +521,23 @@ function togglePanelConnected(connected) {
   $("btn-relogin").style.display = connected ? "" : "none";
 }
 
+// Бейдж статуса аккаунта в шапке карточки. Если вход выполнен любым способом
+// (сервером по паролю ИЛИ вручную/по кукам) — показываем «● подключён», а не
+// «не подключён» из-за отсутствия сохранённого пароля.
+function refreshConnectBadge() {
+  const badge = $("conn-badge");
+  if (!badge) return;
+  let text, cls;
+  if (effectiveConnected(_lastConn)) { text = "● подключён"; cls = "b-green"; }
+  else { [text, cls] = CONN_LABELS[_lastConn.status] || CONN_LABELS.invalid; }
+  badge.className = "badge " + cls;
+  badge.textContent = text;
+}
+
 function renderConnStatus(st) {
   _lastConn = st || { status: "invalid" };
   setSiteConn(connectSite, _lastConn.status);
-  const badge = $("conn-badge");
-  const [text, cls] = CONN_LABELS[_lastConn.status] || CONN_LABELS.invalid;
-  badge.className = "badge " + cls;
-  badge.textContent = text;
+  refreshConnectBadge();
   if (_lastConn.username && !$("hh-username").value) $("hh-username").value = _lastConn.username;
   // Поле кода и кнопка «Отправить код» — только когда сайт запросил код.
   const needSms = _lastConn.status === "needs_sms";
@@ -735,7 +745,7 @@ function connectEvents() {
     if (msg.type === "login") {
       if (msg.site) setSiteLoggedIn(msg.site, msg.logged_in);
       if (!msg.site || msg.site === currentSite) setStatus(msg.logged_in);
-      if (msg.site === connectSite) togglePanelConnected(effectiveConnected(_lastConn));
+      if (msg.site === connectSite) { togglePanelConnected(effectiveConnected(_lastConn)); refreshConnectBadge(); }
       return;
     }
     // Прочие события приходят от всех сессий пользователя; в режиме «все сайты»
@@ -772,7 +782,7 @@ function setStatus(loggedIn) {
   if (rb) rb.style.display = loggedIn ? "" : "none";
   // Если форма подключения открыта на том же сайте — отразить вход (вход мог
   // случиться по сохранённым cookies, без серверного логина).
-  if (connectSite === currentSite) togglePanelConnected(effectiveConnected(_lastConn));
+  if (connectSite === currentSite) { togglePanelConnected(effectiveConnected(_lastConn)); refreshConnectBadge(); }
 }
 
 // ---------- сворачивание разделов ----------
