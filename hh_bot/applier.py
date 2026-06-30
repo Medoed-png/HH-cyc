@@ -101,40 +101,45 @@ def _reveal_letter_field(page: Page) -> None:
 
 
 def _send_cover_letter(page: Page, text: str, log) -> bool:
-    """INLINE-путь: дождаться поля письма, вписать текст и отправить.
+    """INLINE-путь: приложить сопроводительное письмо к уже созданному отклику.
 
-    Поле появляется асинхронно; мешать могут попап «доп. данные», тост-плашка
-    «Отклик отправлен» и лениво/свёрнутый информер. Поэтому на каждой итерации
-    закрываем попап, ищем видимое поле, пробуем его проявить (скролл + разворот).
-    Если за короткую пробу поля нет в DOM ВООБЩЕ — это одно-кликовый отклик,
-    выходим сразу (вернёт False → вызывающий уйдёт в чат). True — только если
-    письмо реально вписано и отправлено inline; при неудаче письмо НЕ
-    отправляется (нет двойной отправки).
+    На hh.ru отклик создаётся одним кликом, а письмо прикладывается ПОСЛЕ — через
+    кнопку «Приложить сопроводительное» (появляется в уведомлении ненадолго).
+    Ловим её опросом, кликаем, в открывшееся поле вписываем текст и жмём
+    «Отправить». True — только если письмо реально вписано и отправлено; иначе
+    False (вызывающий уйдёт в фолбэк-чат), без двойной отправки.
     """
     text = (text or "").strip()
     if not text:
         return False
 
-    letter = None
-    deadline = time.monotonic() + _INLINE_WAIT_SECONDS
-    probe_until = time.monotonic() + _INLINE_PROBE_SECONDS
-    while time.monotonic() < deadline:
-        _dismiss_popup(page)
-        letter = _find_letter_field(page)
-        if letter is not None:
-            break
-        _reveal_letter_field(page)
-        letter = _find_letter_field(page)
-        if letter is not None:
-            break
-        # Ранний выход в чат: поля письма нет в DOM и проба истекла.
-        if time.monotonic() > probe_until and not _letter_field_in_dom(page):
-            return False
-        page.wait_for_timeout(500)
+    # Ловим кнопку «Приложить сопроводительное» (~9 c, она в исчезающем уведомлении).
+    attach = None
+    for _ in range(30):
+        try:
+            cand = page.query_selector(selectors.ATTACH_COVER_LETTER)
+            if cand is not None and cand.is_visible():
+                attach = cand
+                break
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(300)
+    if attach is None:
+        return False  # кнопки письма нет — вызывающий уйдёт в фолбэк (чат)
+    try:
+        attach.click()
+        page.wait_for_timeout(_WAIT_ACTION)
+    except Exception:  # noqa: BLE001
+        return False
 
+    # Появившееся поле письма (дать ему дорисоваться).
+    letter = _find_letter_field(page)
     if letter is None:
-        return False  # поля нет — вызывающий уйдёт в фолбэк (чат)
-
+        page.wait_for_timeout(1000)
+        letter = _find_letter_field(page)
+    if letter is None:
+        log("  поле письма не открылось")
+        return False
     try:
         letter.scroll_into_view_if_needed()
         letter.click()

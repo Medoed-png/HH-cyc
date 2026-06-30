@@ -59,6 +59,9 @@ VACANCY_DESCRIPTION = '[data-qa="vacancy-description"]'
 RESPOND_BUTTON = '[data-qa="vacancy-response-link-top"], [data-qa="vacancy-response-button"]'
 # Уже откликнулись — появляется ссылка «Перейти к отклику».
 ALREADY_RESPONDED = '[data-qa="vacancy-response-link-view-topic"]'
+# Кнопка «Приложить сопроводительное» — появляется в уведомлении ПОСЛЕ создания
+# отклика (отклик на hh теперь одно-кликовый); по клику открывается поле письма.
+ATTACH_COVER_LETTER = '[data-qa="responded-success-attach-cover-letter"]'
 # Поле сопроводительного письма (появляется ПОСЛЕ клика «Откликнуться»).
 COVER_LETTER_INPUT = ('[data-qa="vacancy-response-letter-informer"] textarea, '
                       '[data-qa="textarea-wrapper"] textarea, '
