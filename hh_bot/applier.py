@@ -266,21 +266,31 @@ def _send_letter_via_chat(page: Page, vacancy_id: str, text: str, log) -> bool:
         log("  письмо уже есть в чате — повторно не отправляю")
         return True
 
+    # В чат пишем одной строкой: перенос строки в чате = отправка сообщения,
+    # поэтому многострочное письмо схлопываем в один абзац.
+    chat_text = re.sub(r"\s+", " ", text).strip()
     try:
-        antiban.human_type(page, box, text)  # посимвольный ввод письма
+        antiban.human_type(page, box, chat_text)  # посимвольный ввод письма
     except Exception as e:  # noqa: BLE001
         log(f"  не удалось вписать письмо в чат: {e}")
         return False
 
+    # Отправка: кнопкой, а если её нет — нажатием Enter (в чате так тоже отправляется).
     send = frame.query_selector(selectors.CHAT_SEND_BUTTON)
-    if send is None:
-        log("  кнопка отправки в чате не найдена")
-        return False
-    try:
-        antiban.human_click(page, send)
-    except Exception as e:  # noqa: BLE001
-        log(f"  не удалось отправить письмо в чат: {e}")
-        return False
+    sent = False
+    if send is not None:
+        try:
+            antiban.human_click(page, send)
+            sent = True
+        except Exception:  # noqa: BLE001
+            pass
+    if not sent:
+        try:
+            log("  кнопка отправки в чате не найдена — отправляю по Enter")
+            box.press("Enter")
+        except Exception as e:  # noqa: BLE001
+            log(f"  не удалось отправить письмо в чат: {e}")
+            return False
 
     # Подтверждение по появлению пузыря-сообщения. Клик отправки уже прошёл —
     # при несчитанном подтверждении НЕ перекликиваем (иначе дубль).
