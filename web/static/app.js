@@ -239,7 +239,7 @@ function renderResponses(items, unread) {
   for (const r of items) {
     respById.set(r.id, r);
     const tr = document.createElement("tr");
-    const btnCls = r.responded ? "btn-sm" : "btn-sm ghost";
+    const btnCls = r.responded ? "btn btn-sm btn-primary" : "btn btn-sm btn-outline-secondary";
     tr.innerHTML =
       `<td>${r.title}</td><td>${r.company || ""}</td><td>${r.date || ""}</td>` +
       `<td>${statusBadge(r.status)}</td>` +
@@ -406,6 +406,36 @@ async function loadTelegram() {
 }
 
 // ---------- статистика ----------
+let _statsChart = null;
+
+function renderStatsChart(s) {
+  const el = $("stats-chart");
+  if (!el || typeof Chart === "undefined") return;
+  const invites = s.invitations ?? 0, reject = s.rejections ?? 0, viewed = s.viewed ?? 0;
+  const other = Math.max(0, (s.applied_total ?? 0) - invites - reject - viewed);
+  const data = {
+    labels: ["Приглашения", "Отказы", "Просмотрено", "Без ответа"],
+    datasets: [{
+      data: [invites, reject, viewed, other],
+      backgroundColor: ["#198754", "#dc3545", "#0dcaf0", "#6c757d"],
+      borderWidth: 0,
+    }],
+  };
+  if (_statsChart) {
+    _statsChart.data = data;
+    _statsChart.update();
+  } else {
+    _statsChart = new Chart(el, {
+      type: "doughnut",
+      data,
+      options: {
+        plugins: { legend: { position: "right", labels: { color: "#adb5bd", boxWidth: 12 } } },
+        cutout: "62%",
+      },
+    });
+  }
+}
+
 async function loadStats() {
   try {
     const s = await (await authFetch("/api/stats?site=" + currentSite)).json();
@@ -415,6 +445,7 @@ async function loadStats() {
     $("st-reject").textContent = s.rejections ?? 0;
     $("st-viewed").textContent = s.viewed ?? 0;
     $("st-conv").textContent = (s.conversion ?? 0) + "%";
+    renderStatsChart(s);
   } catch (e) { /* не критично */ }
 }
 

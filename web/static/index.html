@@ -1,28 +1,28 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-bs-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HH-бот — авто-отклик</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header class="header">
-    <div class="brand">✨ HH-бот <span class="subtitle">авто-отклик на вакансии</span></div>
-    <div class="header-right">
-      <select id="site-select" class="site-select" title="Сайт поиска работы"></select>
-      <span id="autopilot-badge" class="badge b-green" style="display:none" title="Автопилот включён">🟢 автопилот</span>
-      <div id="status" class="status muted">● проверяю вход…</div>
-      <button id="btn-reconnect" class="btn" style="display:none" title="Сменить/переподключить аккаунт сайта">Подключить аккаунт</button>
-      <span id="user-email" class="user-email"></span>
-      <button id="btn-logout" class="btn">Выйти</button>
+  <nav class="navbar bg-body-tertiary border-bottom px-3">
+    <span class="navbar-brand mb-0">✨ HH-бот <small class="text-secondary fs-6 fw-normal">авто-отклик на вакансии</small></span>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <select id="site-select" class="form-select form-select-sm" style="width:auto" title="Сайт поиска работы"></select>
+      <span id="autopilot-badge" class="badge text-bg-success" style="display:none" title="Автопилот включён">🟢 автопилот</span>
+      <span id="status" class="status muted">● проверяю вход…</span>
+      <button id="btn-reconnect" class="btn btn-outline-light btn-sm" style="display:none" title="Сменить/переподключить аккаунт сайта">Подключить аккаунт</button>
+      <span id="user-email" class="text-secondary small"></span>
+      <button id="btn-logout" class="btn btn-outline-secondary btn-sm">Выйти</button>
     </div>
-  </header>
+  </nav>
 
-  <main class="content">
-    <!-- Подключение аккаунта hh.ru (серверный логин). Скрыта по умолчанию —
-         показывается только если пользователь ещё не вошёл (см. setStatus). -->
-    <section class="card" id="connect-card" style="display:none">
+  <main class="container py-4">
+    <!-- Подключение аккаунта hh.ru (серверный логин). Скрыта по умолчанию. -->
+    <section class="card mb-3" id="connect-card" style="display:none">
       <div class="card-head">
         <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Подключение аккаунта hh.ru</h2></div>
         <span id="conn-badge" class="badge b-gray">не подключён</span>
@@ -30,22 +30,21 @@
       <div class="card-body">
       <div class="form-grid">
         <label>Логин (email или телефон)</label>
-        <div class="field"><input id="hh-username" type="text" autocomplete="username"></div>
+        <div class="field"><input id="hh-username" class="form-control" type="text" autocomplete="username"></div>
 
-        <label>Пароль <span class="muted">(необязательно)</span></label>
-        <div class="field"><input id="hh-password" type="password" autocomplete="current-password" placeholder="пусто — вход по коду из SMS"></div>
+        <label>Пароль <span class="text-secondary">(необязательно)</span></label>
+        <div class="field"><input id="hh-password" class="form-control" type="password" autocomplete="current-password" placeholder="пусто — вход по коду из SMS"></div>
 
         <label id="sms-label" style="display:none">Код из SMS / письма</label>
-        <div class="field" id="sms-field" style="display:none"><input id="hh-sms" type="text" autocomplete="one-time-code" inputmode="numeric"></div>
+        <div class="field" id="sms-field" style="display:none"><input id="hh-sms" class="form-control" type="text" autocomplete="one-time-code" inputmode="numeric"></div>
       </div>
-
       <div class="toolbar">
-        <button id="btn-connect" class="btn accent">Подключить</button>
-        <button id="btn-send-sms" class="btn accent" style="display:none">Отправить код</button>
+        <button id="btn-connect" class="btn btn-primary">Подключить</button>
+        <button id="btn-send-sms" class="btn btn-primary" style="display:none">Отправить код</button>
         <span class="spacer"></span>
-        <button id="btn-disconnect" class="btn danger">Отключить</button>
+        <button id="btn-disconnect" class="btn btn-danger">Отключить</button>
       </div>
-      <div class="muted" style="margin-top:8px;font-size:12px">
+      <div class="text-secondary small mt-2">
         Пароль хранится в зашифрованном виде и используется только для входа на hh.ru.
         Можно войти и без пароля — по телефону/почте: оставьте пароль пустым, hh.ru
         пришлёт код, и появится поле для его ввода. Если появится капча — нажмите
@@ -55,7 +54,7 @@
     </section>
 
     <!-- Прокси (анти-бан, per-user) -->
-    <section class="card collapsed" id="proxy-card">
+    <section class="card mb-3 collapsed" id="proxy-card">
       <div class="card-head">
         <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Прокси (анти-бан)</h2></div>
         <span id="proxy-badge" class="badge b-gray">не задан</span>
@@ -63,13 +62,13 @@
       <div class="card-body">
       <div class="form-grid">
         <label>Адрес прокси</label>
-        <div class="field"><input id="proxy-url" type="text" autocomplete="off" placeholder="http://user:pass@host:port"></div>
+        <div class="field"><input id="proxy-url" class="form-control" type="text" autocomplete="off" placeholder="http://user:pass@host:port"></div>
       </div>
       <div class="toolbar">
-        <button id="btn-save-proxy" class="btn accent">Сохранить прокси</button>
-        <button id="btn-clear-proxy" class="btn">Очистить</button>
+        <button id="btn-save-proxy" class="btn btn-primary">Сохранить прокси</button>
+        <button id="btn-clear-proxy" class="btn btn-outline-secondary">Очистить</button>
       </div>
-      <div class="muted" style="margin-top:8px;font-size:12px">
+      <div class="text-secondary small mt-2">
         Свой IP на пользователя снижает риск бана. Хранится зашифрованно.
         Применяется при следующем запуске браузера сессии.
       </div>
@@ -77,7 +76,7 @@
     </section>
 
     <!-- Telegram-уведомления (per-user) -->
-    <section class="card collapsed" id="telegram-card">
+    <section class="card mb-3 collapsed" id="telegram-card">
       <div class="card-head">
         <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Telegram-уведомления</h2></div>
         <span id="telegram-badge" class="badge b-gray">выключено</span>
@@ -85,13 +84,13 @@
       <div class="card-body">
       <div class="form-grid">
         <label>Ваш chat_id</label>
-        <div class="field"><input id="telegram-chat-id" type="text" autocomplete="off" placeholder="напр. 123456789"></div>
+        <div class="field"><input id="telegram-chat-id" class="form-control" type="text" autocomplete="off" placeholder="напр. 123456789"></div>
       </div>
       <div class="toolbar">
-        <button id="btn-save-telegram" class="btn accent">Сохранить и проверить</button>
-        <button id="btn-clear-telegram" class="btn">Отключить</button>
+        <button id="btn-save-telegram" class="btn btn-primary">Сохранить и проверить</button>
+        <button id="btn-clear-telegram" class="btn btn-outline-secondary">Отключить</button>
       </div>
-      <div class="muted" id="telegram-hint" style="margin-top:8px;font-size:12px">
+      <div class="text-secondary small mt-2" id="telegram-hint">
         Узнать chat_id: напишите боту @userinfobot. Приходят уведомления о новых
         приглашениях/собеседованиях. Требуется настроенный бот на сервере.
       </div>
@@ -99,39 +98,39 @@
     </section>
 
     <!-- Критерии -->
-    <section class="card">
+    <section class="card mb-3">
       <div class="card-head">
         <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Критерии</h2></div>
       </div>
       <div class="card-body">
       <div class="form-grid">
         <label>Профессии (через запятую)</label>
-        <div class="field"><input id="professions" type="text" autocomplete="off"></div>
+        <div class="field"><input id="professions" class="form-control" type="text" autocomplete="off"></div>
 
         <label>Город / регион</label>
-        <div class="field"><input id="region" type="text" autocomplete="off"></div>
+        <div class="field"><input id="region" class="form-control" type="text" autocomplete="off"></div>
 
         <label>Мин. зарплата</label>
-        <div class="field"><input id="salary_min" type="text" autocomplete="off"></div>
+        <div class="field"><input id="salary_min" class="form-control" type="text" autocomplete="off"></div>
 
         <label>Исключающие слова</label>
-        <div class="field"><input id="exclude_words" type="text" autocomplete="off"></div>
+        <div class="field"><input id="exclude_words" class="form-control" type="text" autocomplete="off"></div>
 
         <label>Обязательные слова</label>
-        <div class="field"><input id="include_words" type="text" autocomplete="off"></div>
+        <div class="field"><input id="include_words" class="form-control" type="text" autocomplete="off"></div>
 
         <label>Имя резюме</label>
-        <div class="field"><input id="resume_name" type="text" autocomplete="off"></div>
+        <div class="field"><input id="resume_name" class="form-control" type="text" autocomplete="off"></div>
 
         <label>Дневной лимит откликов</label>
-        <div class="field"><input id="daily_limit" type="text" autocomplete="off"></div>
+        <div class="field"><input id="daily_limit" class="form-control" type="text" autocomplete="off"></div>
 
         <label>Макс. страниц на запрос</label>
-        <div class="field"><input id="max_pages" type="text" autocomplete="off"></div>
+        <div class="field"><input id="max_pages" class="form-control" type="text" autocomplete="off"></div>
 
         <label>Опыт работы</label>
         <div class="field">
-          <select id="experience">
+          <select id="experience" class="form-select">
             <option value="">Любой</option>
             <option value="noExperience">Нет опыта</option>
             <option value="between1And3">1–3 года</option>
@@ -142,70 +141,77 @@
 
         <label>Тип занятости</label>
         <div class="field checks" id="employment">
-          <label><input type="checkbox" value="full"> Полная</label>
-          <label><input type="checkbox" value="part"> Частичная</label>
-          <label><input type="checkbox" value="project"> Проектная</label>
-          <label><input type="checkbox" value="probation"> Стажировка</label>
-          <label><input type="checkbox" value="volunteer"> Волонтёрство</label>
+          <label><input class="form-check-input" type="checkbox" value="full"> Полная</label>
+          <label><input class="form-check-input" type="checkbox" value="part"> Частичная</label>
+          <label><input class="form-check-input" type="checkbox" value="project"> Проектная</label>
+          <label><input class="form-check-input" type="checkbox" value="probation"> Стажировка</label>
+          <label><input class="form-check-input" type="checkbox" value="volunteer"> Волонтёрство</label>
         </div>
 
         <label>График / формат</label>
         <div class="field checks" id="schedule">
-          <label><input type="checkbox" value="fullDay"> Полный день</label>
-          <label><input type="checkbox" value="remote"> Удалёнка</label>
-          <label><input type="checkbox" value="flexible"> Гибкий</label>
-          <label><input type="checkbox" value="shift"> Сменный</label>
-          <label><input type="checkbox" value="flyInFlyOut"> Вахта</label>
+          <label><input class="form-check-input" type="checkbox" value="fullDay"> Полный день</label>
+          <label><input class="form-check-input" type="checkbox" value="remote"> Удалёнка</label>
+          <label><input class="form-check-input" type="checkbox" value="flexible"> Гибкий</label>
+          <label><input class="form-check-input" type="checkbox" value="shift"> Сменный</label>
+          <label><input class="form-check-input" type="checkbox" value="flyInFlyOut"> Вахта</label>
         </div>
 
         <label>Чёрный список компаний</label>
-        <div class="field"><input id="company_blacklist" type="text" autocomplete="off" placeholder="через запятую"></div>
+        <div class="field"><input id="company_blacklist" class="form-control" type="text" autocomplete="off" placeholder="через запятую"></div>
 
         <label>Автопилот</label>
         <div class="field checks">
-          <label><input type="checkbox" id="autopilot_enabled"> Авто-запуск поиска и откликов</label>
-          <span class="muted">каждые</span>
-          <input id="autopilot_interval_minutes" type="text" style="width:64px" autocomplete="off">
-          <span class="muted">мин</span>
+          <label><input class="form-check-input" type="checkbox" id="autopilot_enabled"> Авто-запуск поиска и откликов</label>
+          <span class="text-secondary">каждые</span>
+          <input id="autopilot_interval_minutes" class="form-control" type="text" style="width:64px" autocomplete="off">
+          <span class="text-secondary">мин</span>
         </div>
 
         <label>Сопроводительное письмо</label>
-        <div class="field"><textarea id="cover_letter" rows="4"></textarea></div>
+        <div class="field"><textarea id="cover_letter" class="form-control" rows="4"></textarea></div>
       </div>
 
       <div class="toolbar">
-        <button id="btn-search" class="btn accent">🔍 Найти</button>
-        <button id="btn-apply" class="btn accent">🚀 Запустить отклики</button>
-        <button id="btn-stop" class="btn danger">⏹ Стоп</button>
+        <button id="btn-search" class="btn btn-primary">🔍 Найти</button>
+        <button id="btn-apply" class="btn btn-primary">🚀 Запустить отклики</button>
+        <button id="btn-stop" class="btn btn-danger">⏹ Стоп</button>
         <span class="spacer"></span>
-        <button id="btn-open" class="btn">Открыть вакансию</button>
-        <button id="btn-show-browser" class="btn">🖥 Показать окно браузера</button>
-        <button id="btn-login" class="btn">Войти</button>
-        <button id="btn-save" class="btn">Сохранить</button>
+        <button id="btn-open" class="btn btn-outline-secondary">Открыть вакансию</button>
+        <button id="btn-show-browser" class="btn btn-outline-secondary">🖥 Показать окно браузера</button>
+        <button id="btn-login" class="btn btn-outline-secondary">Войти</button>
+        <button id="btn-save" class="btn btn-success">Сохранить</button>
       </div>
       </div>
     </section>
 
     <!-- Статистика -->
-    <section class="card" id="stats-card">
+    <section class="card mb-3" id="stats-card">
       <div class="card-head">
         <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Статистика</h2></div>
-        <button id="btn-refresh-stats" class="btn">↻ Обновить</button>
+        <button id="btn-refresh-stats" class="btn btn-outline-secondary btn-sm">↻ Обновить</button>
       </div>
       <div class="card-body">
-        <div class="stats-grid">
-          <div class="stat"><div class="stat-num" id="st-today">0</div><div class="stat-lbl">Отправлено сегодня</div></div>
-          <div class="stat"><div class="stat-num" id="st-total">0</div><div class="stat-lbl">Всего откликов</div></div>
-          <div class="stat"><div class="stat-num" id="st-invites">0</div><div class="stat-lbl">Приглашения</div></div>
-          <div class="stat"><div class="stat-num" id="st-reject">0</div><div class="stat-lbl">Отказы</div></div>
-          <div class="stat"><div class="stat-num" id="st-viewed">0</div><div class="stat-lbl">Просмотрено</div></div>
-          <div class="stat"><div class="stat-num" id="st-conv">0%</div><div class="stat-lbl">Конверсия</div></div>
+        <div class="row g-3 align-items-center">
+          <div class="col-lg-8">
+            <div class="stats-grid">
+              <div class="stat"><div class="stat-num" id="st-today">0</div><div class="stat-lbl">Отправлено сегодня</div></div>
+              <div class="stat"><div class="stat-num" id="st-total">0</div><div class="stat-lbl">Всего откликов</div></div>
+              <div class="stat"><div class="stat-num text-success" id="st-invites">0</div><div class="stat-lbl">Приглашения</div></div>
+              <div class="stat"><div class="stat-num text-danger" id="st-reject">0</div><div class="stat-lbl">Отказы</div></div>
+              <div class="stat"><div class="stat-num text-info" id="st-viewed">0</div><div class="stat-lbl">Просмотрено</div></div>
+              <div class="stat"><div class="stat-num" id="st-conv">0%</div><div class="stat-lbl">Конверсия</div></div>
+            </div>
+          </div>
+          <div class="col-lg-4">
+            <canvas id="stats-chart" height="200"></canvas>
+          </div>
         </div>
       </div>
     </section>
 
     <!-- Вакансии -->
-    <section class="card">
+    <section class="card mb-3">
       <div class="card-head">
         <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Вакансии</h2></div>
       </div>
@@ -225,10 +231,10 @@
     </section>
 
     <!-- Ответы на отклики -->
-    <section class="card">
+    <section class="card mb-3">
       <div class="card-head">
         <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Ответы на отклики</h2></div>
-        <button id="btn-responses" class="btn">↻ Обновить ответы</button>
+        <button id="btn-responses" class="btn btn-outline-secondary btn-sm">↻ Обновить ответы</button>
       </div>
       <div class="card-body">
       <div id="resp-unread" class="unread-bar" style="display:none"></div>
@@ -246,7 +252,7 @@
     </section>
 
     <!-- Лог -->
-    <section class="card">
+    <section class="card mb-3">
       <div class="card-head">
         <div class="card-toggle"><span class="chevron">▾</span><h2 class="card-title">Лог</h2></div>
       </div>
@@ -257,17 +263,21 @@
   </main>
 
   <!-- Окно подтверждения авто-откликов -->
-  <div id="modal" class="modal" style="display:none">
-    <div class="modal-box">
-      <div class="modal-title">🚀 Запустить авто-отклики?</div>
-      <div id="modal-text" class="modal-text"></div>
-      <div class="modal-actions">
-        <button id="modal-cancel" class="btn">Отмена</button>
-        <button id="modal-ok" class="btn accent">Запустить</button>
+  <div id="modal" class="app-modal" style="display:none">
+    <div class="app-modal-box card">
+      <div class="card-body">
+        <div class="modal-title h5">🚀 Запустить авто-отклики?</div>
+        <div id="modal-text" class="text-secondary mb-3"></div>
+        <div class="d-flex justify-content-end gap-2">
+          <button id="modal-cancel" class="btn btn-secondary">Отмена</button>
+          <button id="modal-ok" class="btn btn-primary">Запустить</button>
+        </div>
       </div>
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="/static/auth.js"></script>
   <script src="/static/app.js"></script>
 </body>
