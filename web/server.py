@@ -6,9 +6,9 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
-import queue
 import threading
 import time
 import webbrowser
@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from sqlalchemy.exc import IntegrityError
 from fastapi import Depends, FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -48,6 +49,10 @@ async def lifespan(app: FastAPI):
     # создаст ленивая инициализация в Storage (первая сессия).
     from hh_bot.db import init_db
     init_db()
+    # Запомнить event loop сервера: в него потоки сессий будут безопасно класть
+    # события для SSE-очередей (call_soon_threadsafe).
+    global _event_loop
+    _event_loop = asyncio.get_running_loop()
     # Автопилот: периодический поиск+отклик для пользователей, включивших его.
     from runtime.scheduler import Autopilot
     autopilot = Autopilot(manager)
@@ -90,18 +95,23 @@ async def _no_cache_static(request: Request, call_next):
 
 
 # --- per-user SSE: реестр подписчиков по user_id ---
-# Каждое открытое соединение /api/events регистрирует свою очередь; события
+# Каждое открытое соединение /api/events регистрирует свою asyncio.Queue; события
 # сессии пользователя рассылаются только в его очереди (изоляция между людьми).
-_subscribers: dict[int, set[queue.Queue]] = {}
+# Очереди асинхронные (SSE-эндпоинт async): соединение больше НЕ занимает поток
+# из anyio-пула на всё время жизни (раньше десятки вкладок исчерпывали пул).
+_subscribers: dict[int, set] = {}
 _subs_lock = threading.Lock()
+# Ссылка на event loop uvicorn — события приходят из ПОТОКОВ сессий, а asyncio.Queue
+# не потокобезопасна, поэтому put планируем через call_soon_threadsafe.
+_event_loop: asyncio.AbstractEventLoop | None = None
 
 
-def _add_subscriber(user_id: int, q: queue.Queue) -> None:
+def _add_subscriber(user_id: int, q: asyncio.Queue) -> None:
     with _subs_lock:
         _subscribers.setdefault(user_id, set()).add(q)
 
 
-def _remove_subscriber(user_id: int, q: queue.Queue) -> None:
+def _remove_subscriber(user_id: int, q: asyncio.Queue) -> None:
     with _subs_lock:
         subs = _subscribers.get(user_id)
         if subs:
@@ -111,11 +121,21 @@ def _remove_subscriber(user_id: int, q: queue.Queue) -> None:
 
 
 def _publish(user_id: int, msg: dict) -> None:
-    """Разослать событие во все SSE-очереди этого пользователя."""
+    """Разослать событие во все SSE-очереди пользователя (вызывается из потоков сессий).
+
+    asyncio.Queue.put_nowait безопасно дёргать только в loop-потоке, поэтому
+    планируем его через call_soon_threadsafe на event loop сервера.
+    """
+    loop = _event_loop
+    if loop is None:
+        return
     with _subs_lock:
         targets = list(_subscribers.get(user_id, ()))
     for q in targets:
-        q.put(msg)
+        try:
+            loop.call_soon_threadsafe(q.put_nowait, msg)
+        except RuntimeError:  # noqa: BLE001 — loop останавливается
+            pass
 
 
 # Пул per-user сессий браузера (владеет Playwright; события -> _publish).
@@ -378,8 +398,11 @@ async def api_set_telegram(request: Request, user: User = Depends(current_user))
     from hh_bot import notify
     chat_id = str((await request.json()).get("chat_id", "")).strip()
     creds_mod.set_telegram(user.id, chat_id)
-    sent = notify.send_telegram(chat_id, "✅ HH-бот: уведомления подключены.") \
-        if chat_id else False
+    # send_telegram делает сетевой urlopen (до ~10с) — выносим в threadpool, чтобы
+    # не блокировать event loop (иначе на это время «висит» весь сервер).
+    sent = await run_in_threadpool(
+        notify.send_telegram, chat_id, "✅ HH-бот: уведомления подключены."
+    ) if chat_id else False
     return {"ok": True, "test_sent": sent}
 
 
@@ -455,23 +478,26 @@ def api_cities(q: str = "", site: str = DEFAULT_SITE,
 
 
 @app.get("/api/events")
-def api_events(user: User = Depends(current_user)):
+async def api_events(request: Request, user: User = Depends(current_user)):
     """Поток событий (SSE) ТОЛЬКО для текущего пользователя.
 
     Токен приходит в query (?token=), т.к. EventSource не умеет заголовки.
-    Регистрируем личную очередь подписчика; события чужих сессий сюда не попадут.
-    Синхронный генератор Starlette крутит в пуле потоков.
+    Регистрируем личную asyncio-очередь подписчика; события чужих сессий сюда не
+    попадут. Эндпоинт ПОЛНОСТЬЮ асинхронный — соединение не занимает поток из
+    anyio-пула на всё своё время (раньше много вкладок исчерпывали пул).
     """
-    q: queue.Queue = queue.Queue()
+    q: asyncio.Queue = asyncio.Queue()
     _add_subscriber(user.id, q)
 
-    def stream():
+    async def stream():
         try:
             while True:
                 try:
-                    msg = q.get(timeout=15)
+                    msg = await asyncio.wait_for(q.get(), timeout=15)
                     yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                except queue.Empty:
+                except asyncio.TimeoutError:
+                    if await request.is_disconnected():
+                        break
                     yield ": keep-alive\n\n"  # heartbeat, чтобы соединение не падало
         finally:
             _remove_subscriber(user.id, q)
