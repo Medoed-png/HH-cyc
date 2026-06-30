@@ -139,7 +139,35 @@ class Storage:
             "rejections": rejections,
             "viewed": viewed,
             "conversion": conversion,
+            "daily": self.daily_counts(),
         }
+
+    def daily_counts(self, days: int = 14) -> list[dict]:
+        """Число откликов БОТА по дням за последние `days` дней (для графика).
+
+        Возвращает упорядоченный список [{"date": "дд.мм", "count": N}] со всеми
+        днями, включая нулевые.
+        """
+        today = datetime.date.today()
+        start = today - datetime.timedelta(days=days - 1)
+        start_dt = datetime.datetime.combine(start, datetime.time.min)
+        with SessionLocal() as s:
+            rows = s.execute(
+                select(func.date(AppliedHistory.applied_at), func.count())
+                .where(
+                    AppliedHistory.user_id == self.user_id,
+                    AppliedHistory.site_id == self.site_id,
+                    AppliedHistory.source == "bot",
+                    AppliedHistory.applied_at >= start_dt,
+                )
+                .group_by(func.date(AppliedHistory.applied_at))
+            ).all()
+        counts = {str(d): int(c) for d, c in rows}
+        out = []
+        for i in range(days):
+            d = start + datetime.timedelta(days=i)
+            out.append({"date": d.strftime("%d.%m"), "count": counts.get(d.isoformat(), 0)})
+        return out
 
     def close(self) -> None:
         """Совместимость: сессии короткоживущие, закрывать нечего."""
