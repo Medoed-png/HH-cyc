@@ -296,6 +296,7 @@ def api_config(request: Request, user: User = Depends(current_user)):
         "strict_title_match": crit.strict_title_match,
         "autopilot_enabled": crit.autopilot_enabled,
         "autopilot_interval_minutes": crit.autopilot_interval_minutes,
+        "monitor_enabled": crit.monitor_enabled,
     }
 
 

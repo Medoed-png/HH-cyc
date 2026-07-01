@@ -132,6 +132,29 @@ class AppliedHistory(Base):
     )
 
 
+class MonitorSeen(Base):
+    """Вакансии, уже показанные монитором (для детекта НОВЫХ без повторных уведомлений).
+
+    Отдельно от applied_history: «увидена монитором» ≠ «откликнулись», поэтому не
+    влияет на дедуп откликов и дневной лимит.
+    """
+
+    __tablename__ = "monitor_seen"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    site_id: Mapped[str] = mapped_column(String(32), default="hh")
+    vacancy_id: Mapped[str] = mapped_column(String(64))
+    first_seen_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "site_id", "vacancy_id",
+                         name="uq_monitor_user_site_vacancy"),
+    )
+
+
 def init_db() -> None:
     """Создать таблицы (идемпотентно) и перенести старую историю откликов.
 

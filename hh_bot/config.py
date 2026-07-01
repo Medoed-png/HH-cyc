@@ -51,6 +51,9 @@ class Criteria:
     # Автопилот: периодически сам запускает поиск+отклик (в пределах дневного лимита).
     autopilot_enabled: bool = False
     autopilot_interval_minutes: int = 60
+    # Монитор новых вакансий: периодически ищет по фильтрам БЕЗ входа и уведомляет
+    # о новых (без отклика). Использует тот же интервал, что и автопилот.
+    monitor_enabled: bool = False
 
     @property
     def profession_texts(self) -> list:
@@ -184,6 +187,7 @@ def from_form(data: dict, base: Criteria | None = None) -> Criteria:
     crit.autopilot_enabled = bool(data.get("autopilot_enabled"))
     crit.autopilot_interval_minutes = max(5, _to_int(
         data.get("autopilot_interval_minutes", 60), 60))
+    crit.monitor_enabled = bool(data.get("monitor_enabled"))
     return crit
 
 

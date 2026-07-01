@@ -67,6 +67,7 @@ function collectForm() {
     strict_title_match: $("strict_title_match").checked,
     autopilot_enabled: $("autopilot_enabled").checked,
     autopilot_interval_minutes: $("autopilot_interval_minutes").value,
+    monitor_enabled: $("monitor_enabled").checked,
   };
 }
 
@@ -103,6 +104,7 @@ async function loadConfig() {
   $("strict_title_match").checked = cfg.strict_title_match !== false;  // по умолчанию вкл
   $("auto_letter").checked = !!cfg.auto_letter;
   $("autopilot_enabled").checked = !!cfg.autopilot_enabled;
+  $("monitor_enabled").checked = !!cfg.monitor_enabled;
   $("autopilot-badge").style.display = cfg.autopilot_enabled ? "" : "none";
   updateAutomationBadge();
   $("salary_min").value = groupDigits($("salary_min").value);
@@ -112,9 +114,10 @@ async function loadConfig() {
 function updateAutomationBadge() {
   const b = $("automation-badge");
   if (!b) return;
-  const on = $("autopilot_enabled").checked;
-  b.className = "badge " + (on ? "b-green" : "b-gray");
-  b.textContent = on ? "автопилот вкл" : "выключено";
+  const ap = $("autopilot_enabled").checked, mon = $("monitor_enabled").checked;
+  b.className = "badge " + (ap || mon ? "b-green" : "b-gray");
+  b.textContent = ap && mon ? "автопилот + монитор"
+                : ap ? "автопилот вкл" : mon ? "монитор вкл" : "выключено";
 }
 
 // ---------- автоподсказки ----------
@@ -1198,8 +1201,9 @@ function bindButtons() {
   }
   $("btn-save").onclick = saveConfig;              // кнопка в «Критериях»
   $("btn-save-auto").onclick = saveConfig;         // кнопка в «Автоматизации и письме»
-  // Живое обновление бейджа карточки при переключении автопилота.
+  // Живое обновление бейджа карточки при переключении автопилота/монитора.
   $("autopilot_enabled").addEventListener("change", updateAutomationBadge);
+  $("monitor_enabled").addEventListener("change", updateAutomationBadge);
 
   $("salary_min").addEventListener("input", (e) => {
     const pos = e.target.value.length;

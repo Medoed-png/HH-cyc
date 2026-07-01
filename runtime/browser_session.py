@@ -324,11 +324,12 @@ class BrowserSession(threading.Thread):
         self.events.put((EV_DONE, "check_login"))
 
     def _do_search(self, crit: Criteria) -> list:
-        """Найти и отфильтровать вакансии, вывести подходящие в таблицу."""
+        """Найти и отфильтровать вакансии, вывести подходящие в таблицу.
+
+        Поиск ПУБЛИЧНЫЙ — вход не требуется (выдача сайтов открыта). Вход нужен
+        только для авто-отклика/ответов (см. _cmd_apply).
+        """
         br = self._ensure_browser()
-        if not self.adapter.is_logged_in(br.page):
-            self._log(f"Сначала войдите на {self.adapter.display_name} (кнопка «Войти»).")
-            return []
         all_found = []
         # «Все страницы» — высокий потолок (поиск сам остановится, когда вакансии
         # закончатся); иначе ограничиваемся max_pages.
@@ -365,6 +366,42 @@ class BrowserSession(threading.Thread):
         self._stop_apply.clear()  # сброс возможного стопа от прошлой операции
         self._do_search(crit)
         self.events.put((EV_DONE, "search"))
+
+    def _cmd_monitor(self, crit: Criteria) -> None:
+        """Мониторинг новых вакансий по фильтрам БЕЗ входа: поиск + детект новых.
+
+        Первый запуск берёт текущую выдачу за базу (без уведомлений). Далее шлёт
+        Telegram-уведомление только о вакансиях, появившихся впервые. Отклик НЕ
+        отправляем — только показываем/уведомляем.
+        """
+        from hh_bot import monitor
+        self._stop_apply.clear()
+        suitable = self._do_search(crit)  # публичный поиск + вывод в таблицу
+        ids = [v.vacancy_id for v in suitable]
+        first_run = not monitor.has_any(self.user_id, self.site_id)
+        new_ids = monitor.mark_and_get_new(self.user_id, self.site_id, ids)
+        new_vacs = [v for v in suitable if v.vacancy_id in new_ids]
+        if first_run:
+            self._log(f"Мониторинг запущен: {len(suitable)} вакансий взяты за базу "
+                      f"(уведомлений о них не будет).")
+        elif new_vacs:
+            self._log(f"🔔 Новых вакансий по фильтрам: {len(new_vacs)}")
+            self._notify_telegram_new(new_vacs)
+        else:
+            self._log("Мониторинг: новых вакансий нет.")
+        self.events.put((EV_DONE, "monitor"))
+
+    def _notify_telegram_new(self, vacs: list) -> None:
+        """Telegram-уведомление о новых вакансиях монитора (если задан chat_id)."""
+        chat_id = credentials.get_telegram(self.user_id)
+        if not chat_id:
+            return
+        lines = [f"🔎 Новые вакансии — {self.adapter.display_name}:"]
+        for v in vacs[:15]:
+            sal = f" · {v.salary}" if getattr(v, "salary", "") else ""
+            lines.append(f"• {v.title} — {v.company or ''}{sal}\n{v.url}")
+        if notify.send_telegram(chat_id, "\n".join(lines)):
+            self._log(f"Telegram: уведомление о {len(vacs)} новых вакансиях отправлено.")
 
     def _cmd_responses(self) -> None:
         """Собрать ответы работодателей и отправить их в интерфейс."""

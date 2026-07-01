@@ -61,7 +61,9 @@ class Autopilot(threading.Thread):
         with SessionLocal() as s:
             for row in s.execute(select(SiteConfig)).scalars().all():
                 crit = _crit_from_data(row.data)
-                if not getattr(crit, "autopilot_enabled", False):
+                # Тик нужен, если включён автопилот (поиск+отклик) ИЛИ монитор (поиск).
+                if not (getattr(crit, "autopilot_enabled", False)
+                        or getattr(crit, "monitor_enabled", False)):
                     continue
                 interval = max(5, int(crit.autopilot_interval_minutes)) * 60
                 last = row.last_autopilot_at
@@ -69,20 +71,25 @@ class Autopilot(threading.Thread):
                     continue
                 due.append((row.user_id, row.site_id, crit))
 
-        # Фаза 2: проверяем дневной лимит (своя сессия Storage), запускаем и
-        # фиксируем время запуска в БД.
+        # Фаза 2: запускаем монитор (поиск без входа) и/или автопилот (поиск+отклик
+        # в пределах дневного лимита), фиксируем время запуска в БД.
         for user_id, site_id, crit in due:
-            applied = Storage(user_id=user_id, site_id=site_id).applied_today()
-            if applied >= max(1, int(crit.daily_limit)):
-                # Лимит исчерпан — не запускаем (браузер не трогаем); время НЕ
-                # двигаем, чтобы после сброса лимита автопилот сработал.
+            do_monitor = bool(getattr(crit, "monitor_enabled", False))
+            do_apply = bool(getattr(crit, "autopilot_enabled", False)) and (
+                Storage(user_id=user_id, site_id=site_id).applied_today()
+                < max(1, int(crit.daily_limit)))
+            if not (do_monitor or do_apply):
+                # Автопилот включён, но лимит исчерпан, монитора нет — пропуск,
+                # время НЕ двигаем (сработает после сброса лимита).
                 continue
             self._mark_run(user_id, site_id, now)
-            print(f"[autopilot] запуск u{user_id}/{site_id}", flush=True)
-            # Поиск, затем отклик — команды выполняются по очереди в потоке сессии,
-            # apply использует найденные поиском вакансии (_last_suitable).
-            self._manager.submit(user_id, site_id, "search", crit=crit)
-            self._manager.submit(user_id, site_id, "apply", crit=crit)
+            if do_monitor:
+                print(f"[monitor] запуск u{user_id}/{site_id}", flush=True)
+                self._manager.submit(user_id, site_id, "monitor", crit=crit)
+            if do_apply:
+                print(f"[autopilot] запуск u{user_id}/{site_id}", flush=True)
+                self._manager.submit(user_id, site_id, "search", crit=crit)
+                self._manager.submit(user_id, site_id, "apply", crit=crit)
 
     def _mark_run(self, user_id: int, site_id: str, now: datetime.datetime) -> None:
         """Записать в БД время запуска автопилота для (user, site)."""
