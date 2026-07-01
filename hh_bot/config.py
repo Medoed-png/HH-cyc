@@ -20,9 +20,10 @@ class Criteria:
     """Критерии поиска и поведения бота (зеркало config.yaml)."""
 
     professions: list = field(default_factory=list)
-    # Регион — непрозрачная строка, которую интерпретирует адаптер сайта
-    # (для hh.ru это id области, напр. "1" = Москва, "113" = вся Россия).
-    region: str = "1"
+    # Регион — НАЗВАНИЕ города (site-agnostic); каждый адаптер сам мапит его в свой
+    # гео-код (hh: id области через map_region; SuperJob: geo[t]; прочие — по всей
+    # стране). Пусто = без фильтра по региону.
+    region: str = ""
     salary_min: int = 0
     exclude_words: list = field(default_factory=list)
     include_words: list = field(default_factory=list)
@@ -150,19 +151,12 @@ def from_form(data: dict, base: Criteria | None = None) -> Criteria:
     data: {professions, region (название города), salary_min, exclude_words,
            include_words, resume_name, cover_letter, daily_limit, max_pages}.
     """
-    from .cities_list import CITIES
-
     crit = base or Criteria()
     crit.professions = [{"text": t} for t in _split(data.get("professions", ""))]
 
-    # Название города -> id региона hh.ru (113 = вся Россия). Регион храним
-    # строкой: её интерпретирует адаптер сайта (см. SiteAdapter.map_region).
-    city_name = (data.get("region") or "").strip()
-    city_id = CITIES.get(city_name)
-    if city_id is None:
-        low = {k.lower(): v for k, v in CITIES.items()}
-        city_id = low.get(city_name.lower(), "113")
-    crit.region = str(city_id)
+    # Регион храним НАЗВАНИЕМ города (site-agnostic) — в гео-код каждого сайта его
+    # переводит адаптер (SiteAdapter.map_region). Пусто = без фильтра по региону.
+    crit.region = (data.get("region") or "").strip()
 
     crit.salary_min = _to_int(data.get("salary_min", 0))
     crit.exclude_words = _split(data.get("exclude_words", ""))

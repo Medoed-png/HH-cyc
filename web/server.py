@@ -270,10 +270,13 @@ def api_login_methods(request: Request, user: User = Depends(current_user)):
 def api_config(request: Request, user: User = Depends(current_user)):
     """Текущие критерии пользователя для заполнения формы."""
     crit = config_mod.load_for(user.id, _site(request=request))
-    region_name = {v: k for k, v in CITIES.items()}.get(str(crit.region), "Россия")
+    # region теперь хранится именем города; старые конфиги (id области) -> имя.
+    reg = (crit.region or "").strip()
+    if reg.isdigit():
+        reg = {v: k for k, v in CITIES.items()}.get(reg, "")
     return {
         "professions": ", ".join(crit.profession_texts),
-        "region": region_name,
+        "region": reg,
         # 0 = без фильтра — отдаём пустым, чтобы поле показывало пример, а не «0».
         "salary_min": crit.salary_min or "",
         "exclude_words": ", ".join(crit.exclude_words),

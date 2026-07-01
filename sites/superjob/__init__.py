@@ -62,12 +62,13 @@ class SuperJobAdapter(SiteAdapter):
         page.goto(selectors.LOGIN_URL, wait_until="domcontentloaded")
 
     # --- поиск ---
-    def _build_search_url(self, text: str, page_num: int) -> str:
+    def _build_search_url(self, text: str, page_num: int, town: str = "") -> str:
         from urllib.parse import urlencode
-        # SuperJob: страницы 1-based. Регион (geo) — best-effort опускаем до живой сверки.
-        return selectors.SEARCH_URL + "?" + urlencode(
-            {"keywords": text, "page": page_num + 1}
-        )
+        # SuperJob: страницы 1-based. Регион — geo[t][0]=<town> (если город сверен).
+        params = {"keywords": text, "page": page_num + 1}
+        if town:
+            params["geo[t][0]"] = town
+        return selectors.SEARCH_URL + "?" + urlencode(params)
 
     def _extract_id(self, url: str) -> str:
         """id вакансии SuperJob: число в конце ссылки /vakansii/...-<id>.html."""
@@ -104,18 +105,16 @@ class SuperJobAdapter(SiteAdapter):
                should_stop: Callable[[], bool] = lambda: False
                ) -> list[Vacancy]:
         # Фильтры опыта/занятости/графика для SuperJob пока не поддержаны (best-effort).
-        # Регион (передаётся кодом hh.ru) к SuperJob не применим — честно предупреждаем,
-        # чтобы пользователь понимал, что выдача всероссийская (113 = вся Россия).
-        if region and str(region) != "113":
-            log("  [SuperJob] фильтр региона не применён — выдача по всей России "
-                "(geo-параметр SuperJob ещё не сверён).")
+        town = self.map_region(region)  # город -> town-код SuperJob ('' если не сверен)
+        if region and not town:
+            log(f"  [SuperJob] город «{region}» не сверён — выдача по всей России.")
         found: list[Vacancy] = []
         seen: set[str] = set()  # дедуп по url + детект «пагинация вернула ту же страницу»
         for page_num in range(max_pages):
             if should_stop():
                 log("  [SuperJob] поиск остановлен.")
                 break
-            url = self._build_search_url(query, page_num)
+            url = self._build_search_url(query, page_num, town)
             log(f"  [SuperJob] страница {page_num + 1}: {query}")
             page.goto(url, wait_until="domcontentloaded")
             page.wait_for_timeout(1500)
@@ -147,10 +146,14 @@ class SuperJobAdapter(SiteAdapter):
     def fetch_chat(self, page: Page, vacancy_id: str, log: Log = lambda m: None) -> list:
         return []
 
+    # SuperJob town-коды (geo[t][0]=<id>). Сверено вживую (2026-07-01): Москва=4,
+    # СПб=14 реально фильтруют выдачу. Остальные города добавляются по мере сверки.
+    _TOWNS = {"москва": "4", "санкт-петербург": "14", "спб": "14", "питер": "14"}
+
     # --- таксономия / автоподсказки ---
     def map_region(self, city_name: str) -> str:
-        # Карта городов SuperJob (geo) появится при живой сверке; пока пробрасываем имя.
-        return (city_name or "").strip()
+        """Название города -> town-код SuperJob (geo[t][0]); '' если не сверен."""
+        return self._TOWNS.get((city_name or "").strip().lower(), "")
 
     def suggest_professions(self, text: str) -> list:
         return []  # живые подсказки SuperJob — позже

@@ -295,7 +295,8 @@ class HHAdapter(SiteAdapter):
                employment: list | None = None, schedule: list | None = None,
                should_stop: Callable[[], bool] = lambda: False
                ) -> list[Vacancy]:
-        found = _search.search(page, query, region, max_pages, log=log,
+        area = self.map_region(region)  # регион приходит именем города -> id области hh
+        found = _search.search(page, query, area, max_pages, log=log,
                                experience=experience, employment=employment,
                                schedule=schedule, should_stop=should_stop)
         for v in found:
@@ -325,6 +326,10 @@ class HHAdapter(SiteAdapter):
     def map_region(self, city_name: str) -> str:
         """Название города -> id области hh.ru ("113" = вся Россия по умолчанию)."""
         name = (city_name or "").strip()
+        if not name:
+            return "113"
+        if name.isdigit():  # уже id области (старые сохранённые конфиги)
+            return name
         city_id = CITIES.get(name)
         if city_id is None:
             low = {k.lower(): v for k, v in CITIES.items()}

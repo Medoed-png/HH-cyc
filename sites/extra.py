@@ -217,7 +217,7 @@ class RabotaRuAdapter(GenericSiteAdapter):
     BASE = "https://www.rabota.ru"
     SEARCH_URL = "https://www.rabota.ru/vacancy/"
     QUERY_PARAM = "query"
-    PAGE_PARAM = "page"
+    PAGE_PARAM = "p"     # rabota.ru пагинирует через ?p=N (?page= не работает — сверено)
     PAGE_BASE = 1
     LOGIN_URL = "https://www.rabota.ru/login"
     CARD = ".vacancy-preview-card"

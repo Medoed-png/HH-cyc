@@ -127,6 +127,9 @@ class GenericSiteAdapter(SiteAdapter):
             log(f"[{self.display_name}] поиск ещё не настроен — нужна живая сверка "
                 f"селекторов сайта.")
             return []
+        if region:  # эти сайты пока не поддерживают фильтр региона по URL
+            log(f"  [{self.display_name}] город «{region}» не применён — выдача по "
+                f"умолчанию сайта (фильтр региона ещё не сверён).")
         found: list[Vacancy] = []
         seen: set[str] = set()  # дедуп по url — и защита от «пагинация не работает»
         for page_num in range(max_pages):
