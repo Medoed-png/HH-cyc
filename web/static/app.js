@@ -731,20 +731,44 @@ async function loadTelegram() {
   } catch (e) { /* не критично */ }
 }
 
+// ---------- тема (тёмная/светлая) ----------
+const THEME_KEY = "hh_theme";
+function currentTheme() { return localStorage.getItem(THEME_KEY) || "dark"; }
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-bs-theme", theme);
+  const icon = $("btn-theme") && $("btn-theme").querySelector("i");
+  if (icon) icon.className = theme === "light" ? "bi bi-sun" : "bi bi-moon-stars";
+  // Пересобрать график под цвета темы (граница сегментов/цвет легенды).
+  if (_lastStats) {
+    if (_statsChart) { _statsChart.destroy(); _statsChart = null; }
+    renderStatsChart(_lastStats);
+  }
+}
+function toggleTheme() {
+  const next = currentTheme() === "light" ? "dark" : "light";
+  localStorage.setItem(THEME_KEY, next);
+  applyTheme(next);
+}
+
 // ---------- статистика ----------
 let _statsChart = null;
+let _lastStats = null;
 
 function renderStatsChart(s) {
   const el = $("stats-chart");
   if (!el || typeof Chart === "undefined") return;
+  // Цвета границы/легенды берём из переменных активной темы (адаптивно).
+  const cs = getComputedStyle(document.body);
+  const panel = cs.getPropertyValue("--panel").trim() || "#161b25";
+  const muted = cs.getPropertyValue("--muted").trim() || "#8a94a8";
   const invites = s.invitations ?? 0, reject = s.rejections ?? 0, viewed = s.viewed ?? 0;
   const other = Math.max(0, (s.applied_total ?? 0) - invites - reject - viewed);
   const data = {
     labels: ["Приглашения", "Отказы", "Просмотрено", "Без ответа"],
     datasets: [{
       data: [invites, reject, viewed, other],
-      backgroundColor: ["#37d39b", "#f26a7e", "#5fb0ff", "#3a4456"],
-      borderColor: "#161b25",
+      backgroundColor: ["#37d39b", "#f26a7e", "#5fb0ff", "#8a95a8"],
+      borderColor: panel,
       borderWidth: 2,
     }],
   };
@@ -756,7 +780,7 @@ function renderStatsChart(s) {
       type: "doughnut",
       data,
       options: {
-        plugins: { legend: { position: "right", labels: { color: "#8a94a8", boxWidth: 12, font: { family: "JetBrains Mono", size: 11 } } } },
+        plugins: { legend: { position: "right", labels: { color: muted, boxWidth: 12, font: { family: "JetBrains Mono", size: 11 } } } },
         cutout: "62%",
       },
     });
@@ -766,6 +790,7 @@ function renderStatsChart(s) {
 async function loadStats() {
   try {
     const s = await (await authFetch("/api/stats?site=" + currentSite)).json();
+    _lastStats = s;
     $("st-today").textContent = s.applied_today ?? 0;
     $("st-total").textContent = s.applied_total ?? 0;
     $("st-invites").textContent = s.invitations ?? 0;
@@ -1131,6 +1156,8 @@ function bindButtons() {
 // ---------- старт ----------
 window.addEventListener("DOMContentLoaded", async () => {
   if (!requireAuth()) return;  // нет токена -> на /login
+  applyTheme(currentTheme());  // применить сохранённую тему сразу
+  $("btn-theme").onclick = toggleTheme;
   $("btn-logout").onclick = logout;
   try {
     const me = await (await authFetch("/auth/me")).json();

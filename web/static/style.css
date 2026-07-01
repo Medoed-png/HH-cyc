@@ -348,3 +348,72 @@ a { color: var(--sky); }
 ::-webkit-scrollbar { width: 11px; height: 11px; }
 ::-webkit-scrollbar-thumb { background: #232b3a; border-radius: 8px; border: 3px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-thumb:hover { background: #2f394b; background-clip: content-box; }
+
+/* ============================================================================
+   СВЕТЛАЯ ТЕМА. Переопределяем те же токены — компоненты (var(--…)) адаптируются
+   автоматически; ниже — точечные правки мест, где цвета были зашиты «светлым по
+   тёмному» (бейджи, лог, ховеры таблицы, навбар-градиент и т.п.).
+   ========================================================================== */
+[data-bs-theme="light"] {
+  --ink:      #f3f6fb;
+  --ink-2:    #e9eef6;
+  --panel:    #ffffff;
+  --panel-2:  #f1f5fa;
+  --line:     #d8e0ea;
+  --line-soft:#e7ecf4;
+  --text:     #1b2433;
+  --muted:    #5d6b7e;
+  --faint:    #9aa7b8;
+  --amber:    #e08a14;   /* глубже, чтобы читалось на белом */
+  --amber-hi: #f4a73a;
+  --amber-lo: #b8720c;
+  --amber-soft: rgba(224,138,20,.14);
+  --mint:     #0f9d6b;
+  --mint-soft: rgba(15,157,107,.14);
+  --coral:    #e23b56;
+  --coral-soft: rgba(226,59,86,.11);
+  --sky:      #1f7fe0;
+  --sky-soft: rgba(31,127,224,.12);
+
+  --bs-body-bg: var(--ink);
+  --bs-body-color: var(--text);
+  --bs-emphasis-color: var(--text);
+  --bs-secondary-color: var(--muted);
+  --bs-secondary-bg: var(--panel-2);
+  --bs-tertiary-bg: var(--panel-2);
+  --bs-border-color: var(--line);
+  --bs-primary: var(--amber);
+  --bs-primary-rgb: 224,138,20;
+  --bs-link-color: var(--sky);
+}
+[data-bs-theme="light"] body {
+  background:
+    radial-gradient(1200px 420px at 15% -8%, rgba(224,138,20,.06), transparent 60%),
+    var(--ink);
+}
+[data-bs-theme="light"] .navbar.bg-body-tertiary {
+  background: var(--panel) !important;
+}
+[data-bs-theme="light"] .navbar-brand { color: var(--text) !important; }
+[data-bs-theme="light"] .card {
+  box-shadow: 0 1px 2px rgba(16,24,40,.05), 0 10px 26px -18px rgba(16,24,40,.22);
+}
+[data-bs-theme="light"] .stat { background: var(--panel-2); }
+[data-bs-theme="light"] .badge.b-green { color: #0b7a52; }
+[data-bs-theme="light"] .badge.b-red   { color: #c41f3a; }
+[data-bs-theme="light"] .badge.b-blue  { color: #1763b8; }
+[data-bs-theme="light"] .unread-bar { color: #1763b8; }
+[data-bs-theme="light"] .unread-bar b { color: #0d2a4d; }
+[data-bs-theme="light"] .suggest div:hover,
+[data-bs-theme="light"] .suggest div.active { color: var(--amber-lo); }
+[data-bs-theme="light"] .vac-table tbody tr:hover { background: rgba(16,24,40,.035); }
+[data-bs-theme="light"] .vac-table tr.zebra-odd { background: rgba(16,24,40,.02); }
+[data-bs-theme="light"] .vac-table tr.st-applied { color: #0b7a52; }
+[data-bs-theme="light"] .vac-table tr.st-skipped { background: rgba(16,24,40,.03); }
+[data-bs-theme="light"] .vac-table tr.st-error { color: #c41f3a; }
+[data-bs-theme="light"] .msg-row > td { background: rgba(16,24,40,.04); }
+[data-bs-theme="light"] .log { color: #3a4656; }
+[data-bs-theme="light"] .site-ic { box-shadow: 0 1px 4px rgba(16,24,40,.18); }
+[data-bs-theme="light"] .app-modal { background: rgba(16,24,40,.45); }
+[data-bs-theme="light"] ::-webkit-scrollbar-thumb { background: #c2ccd9; }
+[data-bs-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #aab6c6; }
