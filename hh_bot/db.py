@@ -66,6 +66,11 @@ class SiteConfig(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=datetime.datetime.now
     )
+    # Время последнего запуска автопилота (wall-clock) — чтобы расписание пережило
+    # перезапуск процесса и не «сбрасывалось» на старте. None = ещё не запускался.
+    last_autopilot_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime, nullable=True, default=None
+    )
 
     __table_args__ = (
         UniqueConstraint("user_id", "site_id", name="uq_siteconfig_user_site"),
@@ -152,6 +157,7 @@ def _ensure_columns() -> None:
         "users": [("proxy_url_enc", "VARCHAR(512) DEFAULT ''"),
                   ("telegram_chat_id", "VARCHAR(64) DEFAULT ''")],
         "applied_history": [("last_status", "VARCHAR(64) DEFAULT ''")],
+        "site_configs": [("last_autopilot_at", "DATETIME")],
     }
     insp = inspect(engine)
     existing_tables = set(insp.get_table_names())
