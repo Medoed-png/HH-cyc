@@ -210,6 +210,7 @@
         <button id="btn-stop" class="btn btn-danger"><i class="bi bi-stop-circle"></i> Стоп</button>
         <span class="spacer"></span>
         <button id="btn-open" class="btn btn-outline-secondary"><i class="bi bi-box-arrow-up-right"></i> Открыть вакансию</button>
+        <button id="btn-letter" class="btn btn-outline-primary" title="Сгенерировать сопроводительное письмо для выбранной вакансии (без входа)"><i class="bi bi-envelope-paper"></i> Письмо</button>
         <button id="btn-show-browser" class="btn btn-outline-secondary"><i class="bi bi-window"></i> Показать окно браузера</button>
         <button id="btn-save" class="btn btn-success"><i class="bi bi-check2"></i> Сохранить</button>
       </div>
@@ -341,6 +342,23 @@
         <div class="d-flex justify-content-end gap-2">
           <button id="captcha-cancel" class="btn btn-secondary">Позже</button>
           <button id="captcha-open" class="btn btn-warning"><i class="bi bi-window"></i> Пройти капчу</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Окно сгенерированного сопроводительного письма (preview) -->
+  <div id="letter-modal" class="app-modal" style="display:none">
+    <div class="app-modal-box card" style="width:640px">
+      <div class="card-body">
+        <div class="modal-title h5"><i class="bi bi-envelope-paper text-primary"></i> Сопроводительное письмо</div>
+        <div id="letter-sub" class="text-secondary small mb-2"></div>
+        <textarea id="letter-text" class="form-control" rows="12" readonly></textarea>
+        <div class="text-secondary small mt-2">Сгенерировано из описания вакансии (без ИИ). Скопируйте и вставьте при отклике на сайте.</div>
+        <div class="d-flex justify-content-end gap-2 mt-3">
+          <a id="letter-open" class="btn btn-outline-secondary" target="_blank"><i class="bi bi-box-arrow-up-right"></i> Открыть вакансию</a>
+          <button id="letter-copy" class="btn btn-primary"><i class="bi bi-clipboard"></i> Копировать</button>
+          <button id="letter-close" class="btn btn-secondary">Закрыть</button>
         </div>
       </div>
     </div>

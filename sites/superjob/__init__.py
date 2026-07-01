@@ -153,7 +153,7 @@ class SuperJobAdapter(SiteAdapter):
     # --- таксономия / автоподсказки ---
     def map_region(self, city_name: str) -> str:
         """Название города -> town-код SuperJob (geo[t][0]); '' если не сверен."""
-        return self._TOWNS.get((city_name or "").strip().lower(), "")
+        return self._TOWNS.get(str(city_name or "").strip().lower(), "")
 
     def suggest_professions(self, text: str) -> list:
         return []  # живые подсказки SuperJob — позже

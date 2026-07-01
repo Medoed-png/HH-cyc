@@ -232,6 +232,7 @@ function upsertVacancy(v) {
     $("vac-body").appendChild(tr);
     rows.set(key, tr);
   }
+  tr._vac = v;  // полный объект вакансии на строке — для генерации письма
   const cells = tr.children;
   cells[0].textContent = SITE_NAMES[v.site] || v.site || "";
   cells[1].textContent = v.title;
@@ -940,6 +941,12 @@ async function connectEvents() {
       loadStats();
     }
     else if (msg.type === "chat") onChatLoaded(msg.site, msg.vacancy_id, msg.messages);
+    else if (msg.type === "letter") {
+      $("letter-text").value = msg.text || "";
+      $("letter-sub").textContent = (msg.title || "") + (msg.company ? " · " + msg.company : "");
+      const link = $("letter-open"); if (link) link.href = msg.url || "#";
+      $("letter-modal").style.display = "flex";
+    }
   };
   _es.onerror = () => {
     if (_es) { _es.close(); _es = null; }  // не даём EventSource долбить мёртвым билетом
@@ -992,7 +999,8 @@ function bindCollapsibles() {
 // лишние капчи, дубли запросов к сайту → риск анти-бана). Блокируем кнопку до
 // прихода события "done" по соответствующей операции (с фолбэком по таймауту).
 const OP_BUTTON = { connect: "btn-connect", submit_sms: "btn-send-sms",
-                    search: "btn-search", apply: "btn-apply", responses: "btn-responses" };
+                    search: "btn-search", apply: "btn-apply", responses: "btn-responses",
+                    letter: "btn-letter" };
 const _busyOps = {};  // op -> { btn, html, timer }
 
 function setBusy(op) {
@@ -1067,6 +1075,26 @@ function bindButtons() {
     setBusy("responses");
   };
   $("btn-open").onclick = openSelected;
+  $("btn-letter").onclick = () => {
+    const tr = document.querySelector(".vac-table tr.selected");
+    const v = tr && tr._vac;
+    if (!v) { logLine("Выберите вакансию в таблице, чтобы сгенерировать письмо."); return; }
+    logLine("Генерирую сопроводительное письмо для «" + (v.title || "") + "»…");
+    api("/api/letter", { site: v.site || currentSite, id: v.id, url: v.url,
+                         title: v.title, company: v.company, profession: v.profession });
+    setBusy("letter");
+  };
+  // Модалка письма
+  $("letter-close").onclick = () => { $("letter-modal").style.display = "none"; };
+  $("letter-copy").onclick = async () => {
+    const t = $("letter-text").value;
+    try { await navigator.clipboard.writeText(t); }
+    catch (e) { $("letter-text").select(); document.execCommand("copy"); }
+    logLine("Письмо скопировано в буфер обмена.");
+  };
+  $("letter-modal").addEventListener("click", (e) => {
+    if (e.target === $("letter-modal")) $("letter-modal").style.display = "none";
+  });
   $("btn-show-browser").onclick = () => {
     logLine("Открываю окно браузера…");
     api("/api/show_browser");

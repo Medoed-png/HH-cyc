@@ -271,7 +271,7 @@ def api_config(request: Request, user: User = Depends(current_user)):
     """Текущие критерии пользователя для заполнения формы."""
     crit = config_mod.load_for(user.id, _site(request=request))
     # region теперь хранится именем города; старые конфиги (id области) -> имя.
-    reg = (crit.region or "").strip()
+    reg = str(crit.region or "").strip()
     if reg.isdigit():
         reg = {v: k for k, v in CITIES.items()}.get(reg, "")
     return {
@@ -477,6 +477,18 @@ async def api_responses(request: Request, user: User = Depends(current_user)):
     # и фронт аккумулирует их по площадкам (не затирая), поэтому режим «все» можно.
     for sid in _targets(_site(await _body(request))):
         manager.submit(user.id, sid, "responses")
+    return {"ok": True}
+
+
+@app.post("/api/letter")
+async def api_letter(request: Request, user: User = Depends(current_user)):
+    """Сгенерировать сопроводительное письмо для найденной вакансии (preview)."""
+    data = await request.json()
+    site = _site(data)
+    if (err := _require_site(site)):
+        return err
+    vacancy = {k: data.get(k, "") for k in ("id", "url", "title", "company", "profession")}
+    manager.submit(user.id, site, "letter", vacancy=vacancy)
     return {"ok": True}
 
 

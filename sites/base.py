@@ -165,6 +165,20 @@ class SiteAdapter(ABC):
                    log: Log = lambda m: None) -> list:
         """Сообщения чата конкретной вакансии."""
 
+    # --- описание вакансии (для генерации письма; НЕ требует входа) ---
+    def fetch_description(self, page: "Page", url: str) -> str:
+        """Открыть публичную страницу вакансии и вернуть текст описания.
+
+        База — весь текст страницы (best-effort); сайты с известным селектором
+        описания переопределяют для более чистого текста (см. sites/hh).
+        """
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_timeout(1200)
+            return (page.inner_text("body") or "")[:8000]
+        except Exception:  # noqa: BLE001
+            return ""
+
     # --- таксономия / регион / автоподсказки ---
     @abstractmethod
     def map_region(self, city_name: str) -> str:

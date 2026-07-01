@@ -76,6 +76,7 @@ def load(path: str = CONFIG_PATH) -> Criteria:
     for key, value in data.items():
         if hasattr(crit, key) and value is not None:
             setattr(crit, key, value)
+    crit.region = str(crit.region or "")  # старые yaml-конфиги могли хранить int
     return crit
 
 
@@ -110,6 +111,7 @@ def load_for(user_id: int, site_id: str = "hh") -> Criteria:
     for key, value in data.items():
         if hasattr(crit, key) and value is not None:
             setattr(crit, key, value)
+    crit.region = str(crit.region or "")  # старые конфиги могли хранить регион int
     return crit
 
 

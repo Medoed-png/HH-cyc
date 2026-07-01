@@ -311,6 +311,17 @@ class HHAdapter(SiteAdapter):
         return _applier.run_applications(page, vacancies, crit, storage, log=log,
                                          should_stop=should_stop, on_update=on_update)
 
+    # --- описание вакансии (для генерации письма; вход не нужен) ---
+    def fetch_description(self, page: Page, url: str) -> str:
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_timeout(1200)
+            el = page.query_selector(selectors.VACANCY_DESCRIPTION)
+            text = el.inner_text() if el else page.inner_text("body")
+            return (text or "")[:8000]
+        except Exception:  # noqa: BLE001
+            return ""
+
     # --- ответы / чат ---
     def fetch_responses(self, page: Page, log: Log = lambda m: None) -> dict:
         result = _responses.fetch_responses(page, log=log)
@@ -325,7 +336,7 @@ class HHAdapter(SiteAdapter):
     # --- таксономия / автоподсказки ---
     def map_region(self, city_name: str) -> str:
         """Название города -> id области hh.ru ("113" = вся Россия по умолчанию)."""
-        name = (city_name or "").strip()
+        name = str(city_name or "").strip()
         if not name:
             return "113"
         if name.isdigit():  # уже id области (старые сохранённые конфиги)
