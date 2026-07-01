@@ -312,7 +312,10 @@ class HHAdapter(SiteAdapter):
 
     # --- ответы / чат ---
     def fetch_responses(self, page: Page, log: Log = lambda m: None) -> dict:
-        return _responses.fetch_responses(page, log=log)
+        result = _responses.fetch_responses(page, log=log)
+        for it in result.get("items", []):
+            it["site"] = self.site_id  # элементы самоописываемы (нужно для режима «все»)
+        return result
 
     def fetch_chat(self, page: Page, vacancy_id: str,
                    log: Log = lambda m: None) -> list:

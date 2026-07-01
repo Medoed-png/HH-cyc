@@ -244,9 +244,25 @@ function upsertVacancy(v) {
 }
 
 // ---------- ответы работодателей ----------
-const chatCache = new Map();   // vacancy_id -> messages
-const openPanels = new Map();  // vacancy_id -> panel element (открыта)
-const respById = new Map();    // vacancy_id -> r
+const chatCache = new Map();   // site:vacancy_id -> messages
+const openPanels = new Map();  // site:vacancy_id -> panel element (открыта)
+const respById = new Map();    // site:vacancy_id -> r
+// Аккумулятор ответов по площадкам: в режиме «все сайты» каждое событие обновляет
+// СВОЙ сайт, а таблица рисуется объединением — без затирания.
+const _respStore = new Map();       // site -> {items, unread}
+const _respLoggedOut = new Set();   // сайты с истёкшей сессией
+
+// Собрать объединённую таблицу ответов из накопленных по сайтам событий.
+function renderResponsesAccum() {
+  let items = [], unread = 0;
+  for (const [site, v] of _respStore.entries()) {
+    (v.items || []).forEach(x => { x.site = x.site || site; });  // гарантировать site
+    items = items.concat(v.items || []);
+    unread += v.unread || 0;
+  }
+  const allLoggedOut = _respStore.size === 0 && _respLoggedOut.size > 0;
+  renderResponses(items, unread, allLoggedOut);
+}
 
 function statusBadgeClass(status) {
   const s = (status || "").toLowerCase();
@@ -269,7 +285,11 @@ function statusBadgeEl(status) {
 const RESP_SEEN_KEY = "hh_resp_seen";
 let respSeen = new Set();
 try { respSeen = new Set(JSON.parse(localStorage.getItem(RESP_SEEN_KEY) || "[]")); } catch (e) {}
-function respKey(r) { return currentSite + ":" + r.id; }
+// Ключ ответа/чата — по РЕАЛЬНОМУ сайту элемента (r.site), а не по сайту поиска:
+// иначе в режиме «все сайты» одинаковые id разных площадок конфликтовали бы, а
+// «просмотрено»/чат адресовались бы не туда.
+function chatKey(site, id) { return (site || currentSite) + ":" + id; }
+function respKey(r) { return chatKey(r.site, r.id); }
 function isNewResponse(r) { return !!r.responded && !respSeen.has(respKey(r)); }
 let _lastUnread = 0;
 
@@ -318,7 +338,7 @@ function renderResponses(items, unread, loggedOut) {
   renderUnreadBar(items.filter(isNewResponse).length, _lastUnread);
 
   for (const r of items) {
-    respById.set(r.id, r);
+    respById.set(respKey(r), r);
     const tr = document.createElement("tr");
     const isNew = isNewResponse(r);
     if (isNew) tr.classList.add("resp-new");
@@ -393,10 +413,11 @@ function buildMessages(panel, messages, url) {
 }
 
 function toggleMessages(tr, r) {
+  const key = respKey(r);
   // Если панель уже открыта — закрыть.
   if (tr.nextSibling && tr.nextSibling.classList && tr.nextSibling.classList.contains("msg-row")) {
     tr.nextSibling.remove();
-    openPanels.delete(r.id);
+    openPanels.delete(key);
     return;
   }
   // Открыли ответ — гасим подсветку «новый» (запоминаем как просмотренный).
@@ -417,20 +438,22 @@ function toggleMessages(tr, r) {
   td.appendChild(panel);
   row.appendChild(td);
   tr.after(row);
-  openPanels.set(r.id, panel);
+  openPanels.set(key, panel);
 
-  if (chatCache.has(r.id)) {
-    buildMessages(panel, chatCache.get(r.id), r.url);
+  if (chatCache.has(key)) {
+    buildMessages(panel, chatCache.get(key), r.url);
   } else {
     panel.innerHTML = '<div class="msg-empty">Загружаю переписку…</div>';
-    api("/api/chat", { vacancy_id: r.id });  // придёт через SSE (type: chat)
+    // Чат читаем на РЕАЛЬНОМ сайте отклика (в режиме «все» это может быть не currentSite).
+    api("/api/chat", { vacancy_id: r.id, site: r.site || currentSite });  // придёт по SSE
   }
 }
 
-function onChatLoaded(vacancyId, messages) {
-  chatCache.set(vacancyId, messages);
-  const panel = openPanels.get(vacancyId);
-  const r = respById.get(vacancyId);
+function onChatLoaded(site, vacancyId, messages) {
+  const key = chatKey(site, vacancyId);
+  chatCache.set(key, messages);
+  const panel = openPanels.get(key);
+  const r = respById.get(key);
   if (panel && r) buildMessages(panel, messages, r.url);
 }
 
@@ -693,6 +716,7 @@ async function loadSites() {
     currentSite = sel.value;
     localStorage.setItem("hh_site", currentSite);
     clearTable();
+    _respStore.clear(); _respLoggedOut.clear();  // ответы прошлого сайта не тащим
     _lastRespReq = 0;          // сменили сайт — загрузить ответы заново при входе
     setStatus(false);          // мгновенно поправить шапку под новый режим
     loadConfig();
@@ -897,20 +921,25 @@ async function connectEvents() {
       if (msg.vacancy && msg.vacancy.status === "откликнулись") scheduleStatsRefresh();
     }
     else if (msg.type === "responses") {
+      const site = msg.site || currentSite;
+      // Аккумулируем ответы ПО САЙТУ (в режиме «все» события разных площадок не
+      // затирают друг друга — раньше это была первопричина «видно только последний»).
+      if (msg.logged_out) { _respLoggedOut.add(site); _respStore.delete(site); }
+      else {
+        _respLoggedOut.delete(site);
+        _respStore.set(site, { items: msg.items || [], unread: msg.unread || 0 });
+      }
+      const manual = _pendingManualResp; _pendingManualResp = false;
+      // Авто-обновление при ОТКРЫТОМ чате не перерисовываем (переписка бы схлопнулась).
+      if (manual || openPanels.size === 0) renderResponsesAccum();
       if (msg.logged_out) {
-        // Сессия истекла — показываем призыв войти, не выдаём «обновлено в HH:MM».
-        renderResponses([], 0, true);
-        if (!msg.site || msg.site === currentSite) setStatus(false);
+        if (currentSite !== ALL_SITES && site === currentSite) setStatus(false);
       } else {
-        const manual = _pendingManualResp; _pendingManualResp = false;
-        // Авто-обновление при ОТКРЫТОМ чате не перерисовываем — иначе переписка
-        // схлопнулась бы и кэш потерялся. Ручное обновление перерисовывает всегда.
-        if (manual || openPanels.size === 0) renderResponses(msg.items, msg.unread || 0);
         _lastRespAt = Date.now(); updateRespBadge();
       }
       loadStats();
     }
-    else if (msg.type === "chat") onChatLoaded(msg.vacancy_id, msg.messages);
+    else if (msg.type === "chat") onChatLoaded(msg.site, msg.vacancy_id, msg.messages);
   };
   _es.onerror = () => {
     if (_es) { _es.close(); _es = null; }  // не даём EventSource долбить мёртвым билетом
@@ -1030,14 +1059,11 @@ function bindButtons() {
   };
   $("btn-stop").onclick = () => api("/api/stop");
   $("btn-responses").onclick = () => {
-    if (currentSite === ALL_SITES) {
-      logLine("Ответы доступны по одному сайту — выберите конкретную площадку в списке сверху.");
-      return;
-    }
     $("resp-body").innerHTML = '<tr><td colspan="5" class="muted-cell">Загружаю…</td></tr>';
+    _respStore.clear(); _respLoggedOut.clear();  // свежая выборка (в т.ч. по всем сайтам)
     _lastRespReq = Date.now();  // ручное обновление тоже считается за «обновили»
     _pendingManualResp = true;  // ручной запрос — таблицу перерисовать можно
-    api("/api/responses");
+    api("/api/responses");      // в режиме «все» веером по всем площадкам
     setBusy("responses");
   };
   $("btn-open").onclick = openSelected;

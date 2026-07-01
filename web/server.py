@@ -470,12 +470,10 @@ async def api_stop(request: Request, user: User = Depends(current_user)):
 
 @app.post("/api/responses")
 async def api_responses(request: Request, user: User = Depends(current_user)):
-    # Ответы — строго по одному сайту: в режиме «все» события разных площадок
-    # затирали бы друг друга в одной таблице (чат/«просмотрено» тоже per-site).
-    site = _site(await _body(request))
-    if (err := _require_site(site)):
-        return err
-    manager.submit(user.id, site, "responses")
+    # Веер по всем сайтам в режиме «все»: элементы ответов теперь несут поле site,
+    # и фронт аккумулирует их по площадкам (не затирая), поэтому режим «все» можно.
+    for sid in _targets(_site(await _body(request))):
+        manager.submit(user.id, sid, "responses")
     return {"ok": True}
 
 
